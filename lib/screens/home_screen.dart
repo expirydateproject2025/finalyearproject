@@ -4,6 +4,7 @@ import 'package:expirydatetracker/widgets/bottom_nav.dart';
 import 'package:expirydatetracker/screens/notification_page.dart';
 import 'package:expirydatetracker/screens/profile_page.dart';
 import 'package:expirydatetracker/widgets/product_card.dart';
+import 'package:expirydatetracker/widgets/ProductEditScreen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
