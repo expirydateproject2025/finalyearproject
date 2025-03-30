@@ -4,7 +4,6 @@ import 'package:expirydatetracker/widgets/bottom_nav.dart';
 import 'package:expirydatetracker/screens/notification_page.dart';
 import 'package:expirydatetracker/screens/profile_page.dart';
 import 'package:expirydatetracker/widgets/product_card.dart';
-import 'package:expirydatetracker/widgets/ProductEditScreen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -210,7 +209,6 @@ class _HomeScreenState extends State<HomeScreen> {
           name: product['name'],
           expiryDate: product['expiryDate'],
           quantity: product['quantity'],
-          photoPath: product['photoPath'],
           onEdit: (id) {
             // Handle edit action
           },

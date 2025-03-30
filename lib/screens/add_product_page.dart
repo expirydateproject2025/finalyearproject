@@ -8,6 +8,9 @@ import 'package:expirydatetracker/utils/date_utils.dart';
 import 'package:intl/intl.dart';
 import 'package:expirydatetracker/models/product.dart';
 import 'package:expirydatetracker/widgets/bottom_nav.dart';
+// Add Cloudinary packages
+import 'package:cloudinary_public/cloudinary_public.dart';
+import 'package:path/path.dart' as path;
 
 class AddProductPage extends StatefulWidget {
   const AddProductPage({super.key});
@@ -23,11 +26,16 @@ class _AddProductPageState extends State<AddProductPage>
   final TextEditingController _quantityController = TextEditingController();
   final TextEditingController _categoryController = TextEditingController();
 
+  // Create Cloudinary instance - replace with your own cloud name and upload preset
+  final cloudinary = CloudinaryPublic('dygaj4tbo', 'PRODUCT PHOTO', cache: false);
+
   DateTime? _selectedDate;
   String _selectedReminder = '1 week';
   File? _productImage;
+  String? _productImageUrl; // Store Cloudinary URL
   bool _isAutoMode = true;
   String? _selectedCategory;
+  bool _isUploading = false; // Track image upload status
 
   // Current index for bottom navigation
   int _currentIndex = 1; // Set to 1 since we're on the Add Product page
@@ -98,11 +106,60 @@ class _AddProductPageState extends State<AddProductPage>
         setState(() {
           _productImage = File(image.path);
         });
+
+        // Upload to Cloudinary when image is selected
+        await _uploadImageToCloudinary();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error picking image: $e')),
+        );
+      }
+    }
+  }
+
+  // New method to upload image to Cloudinary
+  // New method to upload image to Cloudinary
+  Future<void> _uploadImageToCloudinary() async {
+    if (_productImage == null) return;
+
+    try {
+      setState(() {
+        _isUploading = true;
+      });
+
+      // Get the file name from the path
+      final fileName = path.basename(_productImage!.path);
+
+      // Create a CloudinaryResponse by uploading the file
+      final response = await cloudinary.uploadFile(
+        CloudinaryFile.fromFile(
+          _productImage!.path,
+          folder: 'expiry_products', // Organize files in a folder
+          resourceType: CloudinaryResourceType.Image, // Note the capital "I" here
+        ),
+      );
+
+      // Store the secure URL
+      setState(() {
+        _productImageUrl = response.secureUrl;
+        _isUploading = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Image uploaded successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isUploading = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to upload image: $e')),
         );
       }
     }
@@ -137,6 +194,14 @@ class _AddProductPageState extends State<AddProductPage>
         _processScannedText(text);
 
         textRecognizer.close();
+
+        // Optionally save the scanned image as product image
+        setState(() {
+          _productImage = File(image.path);
+        });
+
+        // Upload the scanned image to Cloudinary
+        await _uploadImageToCloudinary();
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -214,6 +279,14 @@ class _AddProductPageState extends State<AddProductPage>
       return;
     }
 
+    // Check if image is still uploading
+    if (_isUploading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please wait, image is still uploading')),
+      );
+      return;
+    }
+
     final product = Product(
       name: _nameController.text,
       expiryDate: _expiryController.text,
@@ -221,7 +294,7 @@ class _AddProductPageState extends State<AddProductPage>
       quantity: _quantityController.text.isNotEmpty
           ? int.parse(_quantityController.text)
           : null,
-      photoUrl: _productImage?.path,
+      photoUrl: _productImageUrl, // Use Cloudinary URL instead of local path
       category: _selectedCategory,
     );
 
@@ -377,36 +450,67 @@ class _AddProductPageState extends State<AddProductPage>
                                 width: 2,
                               ),
                             ),
-                            child: _productImage != null
-                                ? ClipOval(
-                              child: Image.file(
-                                _productImage!,
-                                fit: BoxFit.cover,
-                                width: 150,
-                                height: 150,
-                              ),
-                            )
-                                : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
-                                Icon(
-                                  Icons.add_photo_alternate,
-                                  size: 50,
-                                  color: Colors.deepOrange,
-                                ),
-                                SizedBox(height: 8),
-                                Text(
-                                  'Add Product Photo',
-                                  style: TextStyle(
-                                    color: Colors.deepOrange,
-                                    fontWeight: FontWeight.bold,
-                                    fontFamily: 'Poppins',
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                if (_productImage != null)
+                                  ClipOval(
+                                    child: Image.file(
+                                      _productImage!,
+                                      fit: BoxFit.cover,
+                                      width: 150,
+                                      height: 150,
+                                    ),
+                                  )
+                                else
+                                  Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: const [
+                                      Icon(
+                                        Icons.add_photo_alternate,
+                                        size: 50,
+                                        color: Colors.deepOrange,
+                                      ),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        'Add Product Photo',
+                                        style: TextStyle(
+                                          color: Colors.deepOrange,
+                                          fontWeight: FontWeight.bold,
+                                          fontFamily: 'Poppins',
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
+                                if (_isUploading)
+                                  Container(
+                                    width: 150,
+                                    height: 150,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.5),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Center(
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
                         ),
+                        if (_productImageUrl != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              'Image uploaded to cloud ✓',
+                              style: TextStyle(
+                                color: Colors.green[200],
+                                fontFamily: 'Poppins',
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -474,6 +578,7 @@ class _AddProductPageState extends State<AddProductPage>
                     ),
                   ),
 
+                // Rest of the form remains the same
                 // Product Details Form
                 Card(
                   color: Colors.transparent,

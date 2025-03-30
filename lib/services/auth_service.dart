@@ -28,7 +28,6 @@ class AuthService {
         password: password,
       );
 
-      // Create user profile in Firestore
       await _firestore.collection('users').doc(userCredential.user!.uid).set({
         'name': name,
         'email': email,
@@ -39,6 +38,32 @@ class AuthService {
     } on FirebaseAuthException catch (e) {
       throw _handleAuthError(e);
     }
+  }
+
+  Future<void> signOut() async {
+    await _auth.signOut();
+  }
+
+  Future<void> updateProfile({String? name, String? email}) async {
+    final user = _auth.currentUser;
+    if (user == null) throw 'No user logged in';
+
+    if (email != null && email != user.email) {
+      await user.updateEmail(email);
+    }
+
+    if (name != null) {
+      await _firestore.collection('users').doc(user.uid).update({
+        'name': name,
+      });
+    }
+  }
+
+  Future<void> updatePassword(String newPassword) async {
+    final user = _auth.currentUser;
+    if (user == null) throw 'No user logged in';
+
+    await user.updatePassword(newPassword);
   }
 
   String _handleAuthError(FirebaseAuthException e) {
