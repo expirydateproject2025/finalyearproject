@@ -26,7 +26,6 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // Sign in function
   Future<void> signIn() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
@@ -42,10 +41,9 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       if (mounted) {
-        // Show a more user-friendly message based on the error
         String errorMessage = 'An error occurred. Please try again.';
         if (e is Exception) {
-          errorMessage = e.toString(); // Or handle specific error types
+          errorMessage = e.toString();
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(errorMessage)),
@@ -67,7 +65,7 @@ class _LoginScreenState extends State<LoginScreen> {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              Color(0xFF082969), // Sky blue
+              Color(0xFF082969),
               Color(0xFF070625),
             ],
             begin: Alignment.topLeft,
@@ -84,15 +82,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   const SizedBox(height: 48),
-                  // Rounded image
                   Center(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16),
-                      // Rounded corners
                       child: Image.asset(
                         'assets/images/login.jpg',
-                        width: 400, // Adjust width as needed
-                        height: 190, // Adjust height as needed
+                        width: 400,
+                        height: 190,
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -117,14 +113,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 48),
-                  // Email input field
                   CustomTextField(
                     label: 'Email',
                     controller: _emailController,
                     validator: Validators.email,
                   ),
                   const SizedBox(height: 16),
-                  // Password input field
                   CustomTextField(
                     label: 'Password',
                     controller: _passwordController,
@@ -132,17 +126,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     validator: Validators.password,
                   ),
                   const SizedBox(height: 24),
-                  // Login button
                   CustomButton(
                     text: _isLoading ? 'Logging in...' : 'Login',
-                    onPressed: _isLoading
-                        ? null
-                        : () async {
-                      await signIn();
-                    },
+                    onPressed: _isLoading ? null : signIn,
                   ),
                   const SizedBox(height: 16),
-                  // Redirect to Sign Up page
                   TextButton(
                     onPressed: _isLoading
                         ? null

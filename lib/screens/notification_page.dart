@@ -2,9 +2,45 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
+import '../services/hybrid_notification_manager.dart';
+import '../main.dart' show notificationManager;
 
-class NotificationPage extends StatelessWidget {
+class NotificationPage extends StatefulWidget {
   const NotificationPage({super.key});
+
+  @override
+  State<NotificationPage> createState() => _NotificationPageState();
+}
+
+class _NotificationPageState extends State<NotificationPage> {
+  @override
+  void initState() {
+    super.initState();
+    _refreshNotifications();
+  }
+
+  Future<void> _refreshNotifications() async {
+    try {
+      await notificationManager.syncAllNotifications();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Notifications refreshed'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error refreshing: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -16,200 +52,209 @@ class NotificationPage extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              // Refresh notifications
-              FirebaseFirestore.instance
-                  .collection('notifications')
-                  .where('userId', isEqualTo: userId)
-                  .get();
-            },
+            onPressed: _refreshNotifications,
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('notifications')
-            .where('userId', isEqualTo: userId)
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
-          }
+      body: _buildNotificationBody(userId),
+    );
+  }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
+  Widget _buildNotificationBody(String? userId) {
+    if (userId == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.account_circle, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text(
+              'Please sign in to view notifications',
+              style: TextStyle(
+                fontSize: 18,
+                color: AppTheme.secondaryColor,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
-          final notifications = snapshot.data?.docs ?? [];
+    return StreamBuilder(
+      stream: FirebaseFirestore.instance
+          .collection('notifications')
+          .where('userId', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildErrorWidget(
+            icon: Icons.error_outline,
+            title: 'Error Loading Notifications',
+            message: '${snapshot.error}\n\nPlease try again later.',
+          );
+        }
 
-          if (notifications.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.notifications_off,
-                    size: 64,
-                    color: AppTheme.secondaryColor,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No notifications yet',
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final notifications = snapshot.data?.docs ?? [];
+
+        if (notifications.isEmpty) {
+          return _buildEmptyState();
+        }
+
+        return ListView.builder(
+          itemCount: notifications.length,
+          itemBuilder: (context, index) {
+            final notification = notifications[index].data() as Map<String, dynamic>;
+            final timestamp = notification['createdAt'] as Timestamp?;
+            final DateTime createdAt = timestamp?.toDate() ?? DateTime.now();
+            final bool isRead = notification['isRead'] ?? false;
+            final String title = notification['title'] ?? 'No title';
+            final String message = notification['message'] ?? 'No message';
+
+            return Card(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              elevation: isRead ? 1 : 3,
+              color: isRead ? Colors.white : AppTheme.lightBackgroundColor,
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: isRead ? Colors.grey : AppTheme.accentColor,
+                  child: const Icon(Icons.notifications, color: Colors.white),
+                ),
+                title: Text(title,
                     style: TextStyle(
-                      fontSize: 18,
-                      color: AppTheme.secondaryColor,
+                      fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
+                    )),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(message),
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatDate(createdAt),
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+                onTap: () {
+                  if (!isRead) {
+                    FirebaseFirestore.instance
+                        .collection('notifications')
+                        .doc(notifications[index].id)
+                        .update({'isRead': true});
+                  }
+                  _showNotificationDetails(context, notification);
+                },
+                isThreeLine: true,
               ),
             );
-          }
+          },
+        );
+      },
+    );
+  }
 
-          return ListView.builder(
-            itemCount: notifications.length,
-            itemBuilder: (context, index) {
-              final notification = notifications[index].data() as Map<String, dynamic>;
-              final DateTime createdAt = (notification['createdAt'] as Timestamp).toDate();
-              final timeDiff = DateTime.now().difference(createdAt);
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
 
-              String timeAgo;
-              if (timeDiff.inMinutes < 60) {
-                timeAgo = '${timeDiff.inMinutes}m ago';
-              } else if (timeDiff.inHours < 24) {
-                timeAgo = '${timeDiff.inHours}h ago';
-              } else {
-                timeAgo = '${timeDiff.inDays}d ago';
-              }
+    if (difference.inDays == 0) {
+      if (difference.inHours == 0) {
+        return '${difference.inMinutes} minutes ago';
+      }
+      return '${difference.inHours} hours ago';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} days ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
+    }
+  }
 
-              return Dismissible(
-                key: Key(notifications[index].id),
-                background: Container(
-                  color: Colors.red,
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 16),
-                  child: const Icon(
-                    Icons.delete,
-                    color: Colors.white,
-                  ),
-                ),
-                direction: DismissDirection.endToStart,
-                onDismissed: (direction) {
-                  FirebaseFirestore.instance
-                      .collection('notifications')
-                      .doc(notifications[index].id)
-                      .delete();
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Notification deleted'),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                },
-                child: Card(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: _getNotificationColor(notification['type']),
-                      child: Icon(
-                        _getNotificationIcon(notification['type']),
-                        color: Colors.white,
-                      ),
-                    ),
-                    title: Text(
-                      notification['title'] ?? 'Notification',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    subtitle: Text(notification['message'] ?? ''),
-                    trailing: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          timeAgo,
-                          style: TextStyle(
-                            color: AppTheme.secondaryColor,
-                            fontSize: 12,
-                          ),
-                        ),
-                        if (notification['unread'] ?? false)
-                          Container(
-                            width: 8,
-                            height: 8,
-                            margin: const EdgeInsets.only(top: 4),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryColor,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    ),
-                    onTap: () {
-                      if (notification['unread'] ?? false) {
-                        FirebaseFirestore.instance
-                            .collection('notifications')
-                            .doc(notifications[index].id)
-                            .update({'unread': false});
-                      }
-
-                      // Show notification details
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: Text(notification['title'] ?? 'Notification'),
-                          content: Text(notification['message'] ?? ''),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Close'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              );
-            },
-          );
-        },
+  Widget _buildErrorWidget({
+    required IconData icon,
+    required String title,
+    required String message,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Color _getNotificationColor(String? type) {
-    switch (type) {
-      case 'expiry':
-        return Colors.red;
-      case 'warning':
-        return Colors.orange;
-      case 'info':
-        return Colors.blue;
-      default:
-        return AppTheme.primaryColor;
-    }
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.notifications_off, size: 64, color: Colors.grey),
+          const SizedBox(height: 16),
+          Text(
+            'No Notifications',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.primaryColor,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'You have no notifications at this time.',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
   }
 
-  IconData _getNotificationIcon(String? type) {
-    switch (type) {
-      case 'expiry':
-        return Icons.warning;
-      case 'warning':
-        return Icons.error_outline;
-      case 'info':
-        return Icons.info_outline;
-      default:
-        return Icons.notifications;
-    }
+  void _showNotificationDetails(
+      BuildContext context, Map<String, dynamic> notification) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(notification['title'] ?? 'Notification Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(notification['message'] ?? 'No details available'),
+              const SizedBox(height: 16),
+              if (notification['type'] != null)
+                Text(
+                  'Type: ${notification['type']}',
+                  style: const TextStyle(fontStyle: FontStyle.italic),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 }

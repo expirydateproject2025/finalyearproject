@@ -12,28 +12,44 @@ class NotificationService {
   }) async {
     if (userId == null) return;
 
-    await _firestore.collection('notifications').add({
-      'userId': userId,
-      'title': title,
-      'message': message,
-      'type': type,
-      'unread': true,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      await _firestore.collection('notifications').add({
+        'userId': userId,
+        'title': title,
+        'message': message,
+        'type': type,
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      print('Created cloud notification: $title');
+    } catch (e) {
+      print('Error creating notification: $e');
+      rethrow;
+    }
   }
 
   Future<void> markAsRead(String notificationId) async {
-    await _firestore
-        .collection('notifications')
-        .doc(notificationId)
-        .update({'unread': false});
+    try {
+      await _firestore
+          .collection('notifications')
+          .doc(notificationId)
+          .update({'isRead': true});
+    } catch (e) {
+      print('Error marking notification as read: $e');
+      rethrow;
+    }
   }
 
   Future<void> deleteNotification(String notificationId) async {
-    await _firestore
-        .collection('notifications')
-        .doc(notificationId)
-        .delete();
+    try {
+      await _firestore
+          .collection('notifications')
+          .doc(notificationId)
+          .delete();
+    } catch (e) {
+      print('Error deleting notification: $e');
+      rethrow;
+    }
   }
 
   Stream<QuerySnapshot> getNotifications() {
