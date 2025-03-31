@@ -1,46 +1,60 @@
 plugins {
     id "com.android.application"
     id "kotlin-android"
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"
-    id("com.google.gms.google-services")
+    id "com.google.gms.google-services" // For Firebase
 }
 
 android {
     namespace = "com.expiry_date_tracker.expirydatetracker"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    compileSdk 33 // Explicit compile SDK version
+    ndkVersion "25.1.8937393" // Use your Flutter-provided NDK version
+
+    defaultConfig {
+        applicationId "com.expiry_date_tracker.expirydatetracker"
+        minSdkVersion 23
+        targetSdkVersion 33 // Explicit target SDK version
+        versionCode 1
+        versionName "1.0.0"
+
+        multiDexEnabled true // Enable multidex if needed
+    }
 
     compileOptions {
-        coreLibraryDesugaringEnabled true  // ✅ Enables desugaring for Java 8+ support
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled true  // ✅ Enables Java 8+ features
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8
+        jvmTarget = "1.8"
     }
 
-    defaultConfig {
-        applicationId = "com.expiry_date_tracker.expirydatetracker"
-        minSdkVersion 23
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+    signingConfigs {
+        release {
+            storeFile file("keystore.jks") // Update with your actual keystore path
+            storePassword "your-password"
+            keyAlias "your-alias"
+            keyPassword "your-password"
+        }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }
 
 flutter {
-    source = "../.."
+    source "../.."
 }
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
-    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'  // ✅ Updated to 2.1.4
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"
+    implementation 'com.google.firebase:firebase-messaging:23.2.1' // Latest Firebase messaging
 }

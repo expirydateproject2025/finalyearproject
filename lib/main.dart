@@ -2,35 +2,92 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'routes/app_routes.dart';
 import 'theme/app_theme.dart';
-import 'services/hybrid_notification_manager.dart';
 
-final notificationManager = HybridNotificationManager();
+final FlutterLocalNotificationsPlugin _notificationsPlugin =
+FlutterLocalNotificationsPlugin();
+
+/// Background message handler (MUST be top-level function)
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  _showNotification(message.notification?.title, message.notification?.body);
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
     await Firebase.initializeApp();
-    await notificationManager.initialize();
-
-    // Verify notification permissions
-    final messaging = FirebaseMessaging.instance;
-    final settings = await messaging.getNotificationSettings();
-    if (settings.authorizationStatus != AuthorizationStatus.authorized) {
-      await messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-    }
+    await _initializeLocalNotifications();
+    await _initializeFirebaseMessaging();
 
     runApp(const MyApp());
   } catch (e) {
-    print('Initialization error: $e');
-    runApp(const ErrorApp());
+    debugPrint('Initialization error: $e');
+    runApp(const ErrorApp(errorMessage: 'Failed to initialize Firebase.'));
   }
+}
+
+Future<void> _initializeLocalNotifications() async {
+  const AndroidInitializationSettings androidSettings =
+  AndroidInitializationSettings('@mipmap/ic_launcher');
+  final InitializationSettings settings =
+  InitializationSettings(android: androidSettings);
+
+  await _notificationsPlugin.initialize(settings);
+}
+
+Future<void> _initializeFirebaseMessaging() async {
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+  // Request notification permissions
+  NotificationSettings settings = await messaging.requestPermission(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+    debugPrint("User granted notifications permission");
+
+    // Foreground notification handling
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      _showNotification(message.notification?.title, message.notification?.body);
+    });
+
+    // Handle background notifications
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    // Handle when user taps on a notification
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      debugPrint("Notification Clicked: ${message.messageId}");
+    });
+
+    // Retrieve FCM Token (useful for testing)
+    String? token = await messaging.getToken();
+    debugPrint("FCM Token: $token");
+  }
+}
+
+/// Show local notification
+void _showNotification(String? title, String? body) async {
+  const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+    'expiry_reminder', // Notification Channel ID
+    'Expiry Date Reminders',
+    importance: Importance.max,
+    priority: Priority.high,
+  );
+
+  const NotificationDetails details = NotificationDetails(android: androidDetails);
+
+  await _notificationsPlugin.show(
+    0, // Notification ID
+    title ?? 'No Title',
+    body ?? 'No Body',
+    details,
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -43,28 +100,13 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.theme,
       initialRoute: '/',
       routes: AppRoutes.routes,
-      onGenerateRoute: (settings) {
-        if (settings.name == '/') {
-          return MaterialPageRoute(
-            builder: (context) {
-              if (FirebaseAuth.instance.currentUser != null) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  notificationManager.syncAllNotifications();
-                });
-                return AppRoutes.routes['/home']!(context);
-              }
-              return AppRoutes.routes['/']!(context);
-            },
-          );
-        }
-        return null;
-      },
     );
   }
 }
 
 class ErrorApp extends StatelessWidget {
-  const ErrorApp({super.key});
+  final String errorMessage;
+  const ErrorApp({super.key, required this.errorMessage});
 
   @override
   Widget build(BuildContext context) {
@@ -72,20 +114,21 @@ class ErrorApp extends StatelessWidget {
       home: Scaffold(
         body: Center(
           child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
               const Icon(Icons.error_outline, size: 64, color: Colors.red),
-          const SizedBox(height: 20),
-          const Text(
-            'Initialization Error',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Failed to initialize the app. Please restart.',
-            style: TextStyle(color: Colors.grey[700]),
-          ),
-  ]
+              const SizedBox(height: 20),
+              const Text(
+                'Initialization Error',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                errorMessage,
+                style: TextStyle(color: Colors.grey[700]),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
       ),

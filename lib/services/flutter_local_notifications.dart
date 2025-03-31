@@ -1,6 +1,5 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
-import 'package:timezone/data/latest_all.dart' as tz;
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
@@ -15,9 +14,6 @@ class NotificationService {
     );
 
     await _notificationsPlugin.initialize(settings);
-
-    // Initialize time zones
-    tz.initializeTimeZones();
   }
 
   static Future<void> scheduleNotification({
@@ -38,9 +34,6 @@ class NotificationService {
       android: androidDetails,
     );
 
-    // Convert DateTime to TZDateTime (Fixing the error)
-    tz.TZDateTime scheduledDate = tz.TZDateTime.from(scheduledTime, tz.local);
-
     await _notificationsPlugin.zonedSchedule(
       id,
       title,
@@ -50,6 +43,5 @@ class NotificationService {
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle, // ✅ Required
       matchDateTimeComponents: DateTimeComponents.time, // ✅ Keep this if needed
     );
-
   }
 }
