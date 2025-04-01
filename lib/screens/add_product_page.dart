@@ -6,7 +6,7 @@ import 'package:expirydatetracker/widgets/custom_product_text_field.dart';
 import 'package:expirydatetracker/widgets/product_categories.dart';
 import 'package:expirydatetracker/utils/date_utils.dart';
 import 'package:intl/intl.dart';
-import 'package:expirydatetracker/models/product.dart';
+import 'package:expirydatetracker/models/product_model.dart';
 import 'package:expirydatetracker/widgets/bottom_nav.dart';
 // Add Cloudinary packages
 import 'package:cloudinary_public/cloudinary_public.dart';
@@ -279,6 +279,17 @@ class _AddProductPageState extends State<AddProductPage>
       return;
     }
 
+    // Convert string date to DateTime
+    DateTime? expiryDate;
+    try {
+      expiryDate = DateFormat('yyyy-MM-dd').parse(_expiryController.text);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid date format. Use YYYY-MM-DD')),
+      );
+      return;
+    }
+
     // Check if image is still uploading
     if (_isUploading) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -289,22 +300,20 @@ class _AddProductPageState extends State<AddProductPage>
 
     final product = Product(
       name: _nameController.text,
-      expiryDate: _expiryController.text,
+      expiryDate: expiryDate, // Now passing DateTime
+      category: _selectedCategory ?? 'Other', // Provide default value
       reminder: _selectedReminder,
       quantity: _quantityController.text.isNotEmpty
           ? int.parse(_quantityController.text)
           : null,
-      photoUrl: _productImageUrl, // Use Cloudinary URL instead of local path
-      category: _selectedCategory,
+      photoUrl: _productImageUrl,
     );
 
     try {
       await product.save();
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Product added successfully')),
       );
-
       Navigator.pushReplacementNamed(context, '/home');
     } catch (error) {
       ScaffoldMessenger.of(context).showSnackBar(

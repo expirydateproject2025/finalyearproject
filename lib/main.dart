@@ -1,42 +1,40 @@
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:provider/provider.dart';
+import 'firebase_options.dart';
+import 'screens/notification_page.dart';
+import 'services/notification_service.dart';
 import 'routes/app_routes.dart';
 import 'theme/app_theme.dart';
-
-final FlutterLocalNotificationsPlugin _notificationsPlugin =
-FlutterLocalNotificationsPlugin();
 
 /// Background message handler (MUST be top-level function)
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  _showNotification(message.notification?.title, message.notification?.body);
+  await NotificationService().initialize();
+  debugPrint("Handling a background message: ${message.messageId}");
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    await Firebase.initializeApp();
-    await _initializeLocalNotifications();
+    // Initialize Firebase
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+
+    // Initialize Firebase Messaging
     await _initializeFirebaseMessaging();
+
+    // Initialize notification service
+    await NotificationService().initialize();
 
     runApp(const MyApp());
   } catch (e) {
     debugPrint('Initialization error: $e');
     runApp(const ErrorApp(errorMessage: 'Failed to initialize Firebase.'));
   }
-}
-
-Future<void> _initializeLocalNotifications() async {
-  const AndroidInitializationSettings androidSettings =
-  AndroidInitializationSettings('@mipmap/ic_launcher');
-  final InitializationSettings settings =
-  InitializationSettings(android: androidSettings);
-
-  await _notificationsPlugin.initialize(settings);
 }
 
 Future<void> _initializeFirebaseMessaging() async {
@@ -52,42 +50,28 @@ Future<void> _initializeFirebaseMessaging() async {
   if (settings.authorizationStatus == AuthorizationStatus.authorized) {
     debugPrint("User granted notifications permission");
 
-    // Foreground notification handling
+    // Foreground message handling
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      _showNotification(message.notification?.title, message.notification?.body);
+      debugPrint("Got a message whilst in the foreground!");
+      debugPrint("Message data: ${message.data}");
+
+      if (message.notification != null) {
+        debugPrint("Message also contained a notification: ${message.notification}");
+      }
     });
 
-    // Handle background notifications
+    // Background message handling
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-    // Handle when user taps on a notification
+    // When user taps on notification to open app
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      debugPrint("Notification Clicked: ${message.messageId}");
+      debugPrint("Notification clicked: ${message.messageId}");
     });
 
-    // Retrieve FCM Token (useful for testing)
+    // Get FCM token
     String? token = await messaging.getToken();
     debugPrint("FCM Token: $token");
   }
-}
-
-/// Show local notification
-void _showNotification(String? title, String? body) async {
-  const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-    'expiry_reminder', // Notification Channel ID
-    'Expiry Date Reminders',
-    importance: Importance.max,
-    priority: Priority.high,
-  );
-
-  const NotificationDetails details = NotificationDetails(android: androidDetails);
-
-  await _notificationsPlugin.show(
-    0, // Notification ID
-    title ?? 'No Title',
-    body ?? 'No Body',
-    details,
-  );
 }
 
 class MyApp extends StatelessWidget {
@@ -100,7 +84,17 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.theme,
       initialRoute: '/',
       routes: AppRoutes.routes,
+      home: const AuthWrapper(),
     );
+  }
+}
+
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const NotificationPage();
   }
 }
 
