@@ -298,24 +298,40 @@ class _AddProductPageState extends State<AddProductPage>
       return;
     }
 
-    final product = Product(
-      name: _nameController.text,
-      expiryDate: expiryDate, // Now passing DateTime
-      category: _selectedCategory ?? 'Other', // Provide default value
-      reminder: _selectedReminder,
-      quantity: _quantityController.text.isNotEmpty
-          ? int.parse(_quantityController.text)
-          : null,
-      photoUrl: _productImageUrl,
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const Center(child: CircularProgressIndicator());
+      },
     );
 
     try {
+      final product = Product(
+        name: _nameController.text,
+        expiryDate: expiryDate,
+        category: _selectedCategory ?? 'Other',
+        reminder: _selectedReminder,
+        quantity: _quantityController.text.isNotEmpty
+            ? int.parse(_quantityController.text)
+            : 1,
+        photoUrl: _productImageUrl,
+      );
+
       await product.save();
+
+      // Close loading dialog
+      Navigator.of(context).pop();
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Product added successfully')),
       );
       Navigator.pushReplacementNamed(context, '/home');
     } catch (error) {
+      // Close loading dialog
+      Navigator.of(context).pop();
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to add product: $error')),
       );

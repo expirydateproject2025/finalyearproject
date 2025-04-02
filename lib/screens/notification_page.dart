@@ -156,16 +156,21 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
         trailing: PopupMenuButton(
           icon: const Icon(Icons.more_vert),
           onSelected: (value) async {
+            if (product.id == null) {
+              // Show an error message or handle the null ID case
+              return;
+            }
+
             if (value == 'view') {
               // Navigate to product detail
             } else if (value == 'delete') {
-              await _firestoreService.deleteProduct(product.id);
+              await _firestoreService.deleteProduct(product.id!);
             } else if (value == 'toggleNotifications') {
               if (product.notificationsScheduled) {
-                await _notificationService.cancelProductNotifications(product.id);
+                await _notificationService.cancelProductNotifications(product.id!);
               } else {
                 await _notificationService.scheduleExpiryNotification(
-                  productId: product.id,
+                  productId: product.id!,
                   productName: product.name,
                   expiryDate: product.expiryDate,
                 );

@@ -7,13 +7,13 @@ plugins {
 
 android {
     namespace = "com.expiry_date_tracker.expirydatetracker"
-    compileSdk 33 // Explicit compile SDK version
+    compileSdk 35 // Explicit compile SDK version
     ndkVersion "25.1.8937393" // Use your Flutter-provided NDK version
 
     defaultConfig {
         applicationId "com.expiry_date_tracker.expirydatetracker"
         minSdkVersion 23
-        targetSdkVersion 33 // Explicit target SDK version
+        targetSdkVersion 34 // Explicit target SDK version
         versionCode 1
         versionName "1.0.0"
 

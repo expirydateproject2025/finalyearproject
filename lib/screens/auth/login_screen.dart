@@ -4,6 +4,7 @@ import 'package:expirydatetracker/widgets/custom_button.dart';
 import 'package:expirydatetracker/widgets/custom_text_field.dart';
 import 'package:expirydatetracker/services/auth_service.dart';
 import 'package:expirydatetracker/utils/validators.dart';
+import 'package:expirydatetracker/screens/auth/error_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,6 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _authService = AuthService();
   bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -29,26 +31,28 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> signIn() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     try {
-      await _authService.signIn(
+      final result = await _authService.signIn(
         _emailController.text.trim(),
         _passwordController.text.trim(),
       );
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+
+      if (result.success || result.needsVerification) {
+        // Allow login regardless of verification status
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+        }
+      } else {
+        setState(() => _errorMessage = result.message);
       }
     } catch (e) {
-      if (mounted) {
-        String errorMessage = 'An error occurred. Please try again.';
-        if (e is Exception) {
-          errorMessage = e.toString();
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
-        );
-      }
+      setState(() => _errorMessage = 'An unexpected error occurred. Please try again.');
+      print('Login error: $e');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -125,11 +129,43 @@ class _LoginScreenState extends State<LoginScreen> {
                     isPassword: true,
                     validator: Validators.password,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () => Navigator.pushNamed(context, '/forgot-password'),
+                      child: Text(
+                        'Forgot Password?',
+                        style: TextStyle(
+                          color: AppColors.secondary,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   CustomButton(
                     text: _isLoading ? 'Logging in...' : 'Login',
                     onPressed: _isLoading ? null : signIn,
                   ),
+                  if (_errorMessage != null) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(color: Colors.red),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   TextButton(
                     onPressed: _isLoading

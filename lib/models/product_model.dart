@@ -5,7 +5,7 @@ class Product {
   final String? id;
   final String name;
   final DateTime expiryDate;
-  final String category; // Changed to non-nullable
+  final String category;
   final String? reminder;
   final int? quantity;
   final String? photoUrl;
@@ -21,7 +21,7 @@ class Product {
     this.id,
     required this.name,
     required this.expiryDate,
-    required this.category, // Now required
+    required this.category,
     this.reminder,
     this.quantity,
     this.photoUrl,
@@ -45,7 +45,7 @@ class Product {
       'expiryDate': Timestamp.fromDate(expiryDate),
       'category': category,
       'reminder': reminder,
-      'quantity': quantity,
+      'quantity': quantity ?? 1,
       'photoUrl': photoUrl,
       'barcode': barcode,
       'notes': notes,
@@ -53,29 +53,39 @@ class Product {
       'notificationsScheduled': notificationsScheduled,
       'scheduledNotifications': scheduledNotifications,
       'createdAt': Timestamp.fromDate(createdAt),
-      'updatedAt': Timestamp.fromDate(updatedAt),
+      'updatedAt': Timestamp.fromDate(DateTime.now()), // Always update the timestamp
     };
   }
+
+  // Alternative name for toFirestore for compatibility
+  Map<String, dynamic> toMap() => toFirestore();
 
   // Create from Firestore document
   factory Product.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
 
+    // Handle missing or invalid data with defaults
     return Product(
       id: doc.id,
-      name: data['name'] ?? '',
-      expiryDate: (data['expiryDate'] as Timestamp).toDate(),
-      category: data['category'] ?? '',
+      name: data['name'] ?? 'Unnamed Product',
+      expiryDate: data['expiryDate'] is Timestamp
+          ? (data['expiryDate'] as Timestamp).toDate()
+          : DateTime.now(),
+      category: data['category'] ?? 'Uncategorized',
       reminder: data['reminder'],
-      quantity: data['quantity'],
+      quantity: data['quantity'] is int ? data['quantity'] : 1,
       photoUrl: data['photoUrl'],
       barcode: data['barcode'],
       notes: data['notes'],
       userId: data['userId'],
       notificationsScheduled: data['notificationsScheduled'] ?? false,
       scheduledNotifications: data['scheduledNotifications'],
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
-      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
+      createdAt: data['createdAt'] is Timestamp
+          ? (data['createdAt'] as Timestamp).toDate()
+          : DateTime.now(),
+      updatedAt: data['updatedAt'] is Timestamp
+          ? (data['updatedAt'] as Timestamp).toDate()
+          : DateTime.now(),
     );
   }
 
@@ -110,7 +120,7 @@ class Product {
       notificationsScheduled: notificationsScheduled ?? this.notificationsScheduled,
       scheduledNotifications: scheduledNotifications ?? this.scheduledNotifications,
       createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
+      updatedAt: updatedAt ?? DateTime.now(), // Always update when copying
     );
   }
 
@@ -137,79 +147,144 @@ class Product {
     }
   }
 
-  // Collection reference
-  static CollectionReference<Map<String, dynamic>> get collection {
-    return FirebaseFirestore.instance.collection('products');
+  // Get user-specific collection reference - using structure from first version
+  static CollectionReference<Map<String, dynamic>> getUserProductsCollection(String userId) {
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('products');
   }
 
-  // CRUD Operations
+  // Alternative collection reference - using structure from second version
+  static CollectionReference<Map<String, dynamic>> getProductsCollection(String userId) {
+    return FirebaseFirestore.instance
+        .collection('products')
+        .doc(userId)
+        .collection('items');
+  }
 
-  // Create
+  // Get current user's collection reference - using structure from first version
+  static CollectionReference<Map<String, dynamic>> get currentUserProductsCollection {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
+    return getUserProductsCollection(userId);
+  }
+
+  // Save product to Firestore - using structure from first version
   Future<DocumentReference> save() async {
-    Map<String, dynamic> data = toFirestore();
-    if (data['userId'] == null) {
-      data['userId'] = FirebaseAuth.instance.currentUser?.uid;
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) {
+      throw Exception('User not authenticated');
     }
-    return await collection.add(data);
-  }
 
-  // Read all products for current user
-  static Future<List<Product>> getAllForCurrentUser() async {
-    String? userId = FirebaseAuth.instance.currentUser?.uid;
-    if (userId == null) return [];
+    final collection = getUserProductsCollection(userId);
 
-    QuerySnapshot snapshot = await collection
-        .where('userId', isEqualTo: userId)
-        .orderBy('expiryDate')
-        .get();
-
-    return snapshot.docs
-        .map((doc) => Product.fromFirestore(doc))
-        .toList();
-  }
-
-  // Read products expiring soon
-  static Future<List<Product>> getExpiringSoon(int daysThreshold) async {
-    String? userId = FirebaseAuth.instance.currentUser?.uid;
-    if (userId == null) return [];
-
-    DateTime now = DateTime.now();
-    DateTime threshold = now.add(Duration(days: daysThreshold));
-
-    QuerySnapshot snapshot = await collection
-        .where('userId', isEqualTo: userId)
-        .where('expiryDate', isLessThanOrEqualTo: Timestamp.fromDate(threshold))
-        .orderBy('expiryDate')
-        .get();
-
-    return snapshot.docs
-        .map((doc) => Product.fromFirestore(doc))
-        .toList();
-  }
-
-  // Read single product
-  static Future<Product?> getById(String id) async {
-    final doc = await collection.doc(id).get();
-    if (doc.exists) {
-      return Product.fromFirestore(doc);
-    }
-    return null;
-  }
-
-  // Update
-  Future<void> update() async {
+    // If the product has an ID, update it, otherwise create a new one
     if (id != null) {
-      await collection.doc(id).update({
-        ...toFirestore(),
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-      });
+      await collection.doc(id).update(toFirestore());
+      return collection.doc(id);
+    } else {
+      return await collection.add(toFirestore());
     }
   }
 
-  // Delete
+  // Alternative save method - using structure from second version
+  Future<DocumentReference> saveToProductsCollection() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('User must be logged in to save a product');
+    }
+
+    try {
+      final productsRef = getProductsCollection(user.uid);
+
+      // If the product has an ID, update it, otherwise create a new one
+      if (id != null) {
+        await productsRef.doc(id).update(toFirestore());
+        return productsRef.doc(id);
+      } else {
+        return await productsRef.add(toFirestore());
+      }
+    } catch (e) {
+      throw Exception('Failed to save product: $e');
+    }
+  }
+
+  // Delete product method
   Future<void> delete() async {
-    if (id != null) {
-      await collection.doc(id).delete();
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) {
+      throw Exception('User not authenticated');
     }
+
+    if (id == null) {
+      throw Exception('Cannot delete a product without an ID');
+    }
+
+    final collection = getUserProductsCollection(userId);
+    await collection.doc(id).delete();
+  }
+
+  // Fetch products by expiry status
+  static Future<List<Product>> getProductsByExpiryStatus(String status) async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
+
+    final collection = getUserProductsCollection(userId);
+
+    // Define query based on status
+    Query query;
+    final now = DateTime.now();
+
+    switch (status) {
+      case 'Expired':
+        query = collection.where('expiryDate', isLessThan: Timestamp.fromDate(now));
+        break;
+      case 'Expires Today/Tomorrow':
+        final tomorrow = now.add(const Duration(days: 1));
+        query = collection
+            .where('expiryDate', isGreaterThanOrEqualTo: Timestamp.fromDate(now))
+            .where('expiryDate', isLessThanOrEqualTo: Timestamp.fromDate(tomorrow));
+        break;
+      case 'Expires This Week':
+        final nextWeek = now.add(const Duration(days: 7));
+        final tomorrow = now.add(const Duration(days: 1));
+        query = collection
+            .where('expiryDate', isGreaterThan: Timestamp.fromDate(tomorrow))
+            .where('expiryDate', isLessThanOrEqualTo: Timestamp.fromDate(nextWeek));
+        break;
+      case 'Expires This Month':
+        final nextMonth = now.add(const Duration(days: 30));
+        final nextWeek = now.add(const Duration(days: 7));
+        query = collection
+            .where('expiryDate', isGreaterThan: Timestamp.fromDate(nextWeek))
+            .where('expiryDate', isLessThanOrEqualTo: Timestamp.fromDate(nextMonth));
+        break;
+      case 'Valid':
+        final nextMonth = now.add(const Duration(days: 30));
+        query = collection.where('expiryDate', isGreaterThan: Timestamp.fromDate(nextMonth));
+        break;
+      default:
+        query = collection.orderBy('expiryDate');
+    }
+
+    final snapshot = await query.get();
+    return snapshot.docs.map((doc) => Product.fromFirestore(doc)).toList();
+  }
+
+  // Fetch products by category
+  static Future<List<Product>> getProductsByCategory(String category) async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
+
+    final collection = getUserProductsCollection(userId);
+    final snapshot = await collection.where('category', isEqualTo: category).get();
+    return snapshot.docs.map((doc) => Product.fromFirestore(doc)).toList();
   }
 }
