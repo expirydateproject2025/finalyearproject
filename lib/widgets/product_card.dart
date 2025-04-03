@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
@@ -35,88 +36,70 @@ class ProductCard extends StatefulWidget {
 }
 
 class _ProductCardState extends State<ProductCard> {
-  // Initialize Cloudinary client
-  // Replace with your actual Cloudinary credentials
-  final cloudinary = CloudinaryPublic('dygaj4tbo', 'PRODUCT PHOTO', cache: true);
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final cloudinary = CloudinaryPublic('dygaj4tbo', 'PRODUCT PHOTO');
 
-  // Calculate days remaining until expiry
-  int get daysRemaining {
-    return widget.expiryDate.difference(DateTime.now()).inDays;
-  }
+  int get daysRemaining => widget.expiryDate.difference(DateTime.now()).inDays;
 
-  // Determine color based on days remaining
   Color get expiryColor {
-    if (daysRemaining <= 0) {
-      return Colors.red;
-    } else if (daysRemaining <= 7) {
-      return Colors.orange;
-    } else if (daysRemaining <= 30) {
-      return Colors.yellow;
-    } else {
-      return Colors.green;
-    }
+    if (daysRemaining <= 0) return Colors.red;
+    if (daysRemaining <= 7) return Colors.orange;
+    if (daysRemaining <= 30) return Colors.yellow;
+    return Colors.green;
   }
 
-  // Format date as readable string
-  String get formattedDate {
-    return DateFormat('MMM dd, yyyy').format(widget.expiryDate);
-  }
+  String get formattedDate => DateFormat('MMM dd, yyyy').format(widget.expiryDate);
 
-  // Delete product and its image from Cloudinary
-  void _deleteProduct(String id) async {
+  Future<void> _deleteProduct(String id) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
     try {
-      // Get the product data to get the photo URL before deletion
-      final productDoc = await FirebaseFirestore.instance.collection('products').doc(id).get();
-      final data = productDoc.data();
-      final photoUrl = data?['photoUrl'] as String?;
+      // Delete from Firestore
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('products')
+          .doc(id)
+          .delete();
 
-      // Delete from Cloudinary if URL exists and contains Cloudinary URL pattern
-      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl.contains('cloudinary.com')) {
-        try {
-          // Extract the public ID from the URL
-          // Typically, Cloudinary URLs are like: https://res.cloudinary.com/YOUR_CLOUD_NAME/image/upload/v123456789/public_id.jpg
-          final Uri uri = Uri.parse(photoUrl);
-          final pathSegments = uri.pathSegments;
+      // Delete image from Cloudinary if exists
+      Future<void> deleteImage(String publicId) async {
+        final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        final signature = generateSignature(publicId, timestamp); // You'll need to implement this
 
-          // Get the filename without extension which is typically the last part of the URL
-          if (pathSegments.length > 2) {
-            // The public ID is typically the last segment without file extension
-            final String publicId = path.basenameWithoutExtension(pathSegments.last);
+        final response = await http.post(
+          Uri.parse('https://api.cloudinary.com/v1_1/dygaj4tbo/image/destroy'),
+          body: {
+            'public_id': publicId,
+            'api_key': 'YOUR_API_KEY',
+            'timestamp': timestamp.toString(),
+            'signature': signature,
+          },
+        );
 
-            // You would need server-side code to delete from Cloudinary
-            // as client-side deletion requires API Secret which shouldn't be exposed
-            // Here we're just showing how you might handle the logic
-            print('Would delete image with publicId: $publicId from Cloudinary');
-
-            // In production, you might have a Cloud Function or a backend API for this:
-            // await deleteCloudinaryImage(publicId);
-          }
-        } catch (e) {
-          print('Failed to parse/delete Cloudinary image: $e');
-          // Continue with product deletion even if photo deletion fails
+        if (response.statusCode != 200) {
+          throw Exception('Failed to delete image: ${response.body}');
         }
       }
 
-      // Delete from Firestore
-      await FirebaseFirestore.instance.collection('products').doc(id).delete();
-
       widget.onDelete(id);
 
-      // Show deletion confirmation
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Product deleted successfully'),
-          backgroundColor: Colors.green,
-        ),
+        const SnackBar(content: Text('Product deleted')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to delete product: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Delete failed: $e')),
       );
     }
+  }
+
+  String _extractPublicId(String url) {
+    final uri = Uri.parse(url);
+    final segments = uri.pathSegments;
+    final uploadIndex = segments.indexOf('upload');
+    return segments.sublist(uploadIndex + 2).join('/').split('.')[0];
   }
 
   // Pick image from gallery or camera
@@ -172,31 +155,17 @@ class _ProductCardState extends State<ProductCard> {
 
       final fileName = '${widget.id}_${DateTime.now().millisecondsSinceEpoch}';
 
-      // Upload file without transformations
+      // Upload file
       final response = await cloudinary.uploadFile(
         CloudinaryFile.fromFile(
           imageFile.path,
           resourceType: CloudinaryResourceType.Image,
-          folder: 'PRODUCT_PHOTOS',
+          folder: 'product_photos',
           publicId: fileName,
         ),
       );
 
-      // Apply transformations by modifying the URL
-      String imageUrl = response.secureUrl;
-      final Uri uri = Uri.parse(imageUrl);
-      final String path = uri.path;
-      final int uploadIndex = path.indexOf('/upload/');
-
-      if (uploadIndex != -1) {
-        // Insert transformations after '/upload/'
-        final String newPath = path.substring(0, uploadIndex + 8) +
-            'w_800,h_600,c_limit,q_auto,f_auto/' +
-            path.substring(uploadIndex + 8);
-        imageUrl = uri.replace(path: newPath).toString();
-      }
-
-      return imageUrl;
+      return response.secureUrl;
     } catch (e) {
       print('Cloudinary upload error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -206,8 +175,8 @@ class _ProductCardState extends State<ProductCard> {
     }
   }
 
-  // Comprehensive edit dialog with more fields, validation, and photo upload
-  Future<void> _showDetailedEditDialog(BuildContext context) async {
+  // Show edit dialog
+  Future<void> _showEditDialog() async {
     final nameController = TextEditingController(text: widget.name);
     final quantityController = TextEditingController(text: widget.quantity?.toString() ?? '');
     final expiryController = TextEditingController(text: formattedDate);
@@ -218,8 +187,8 @@ class _ProductCardState extends State<ProductCard> {
     bool isUploading = false;
 
     final categories = [
-      'Meat', 'Sweets', 'Juice', 'Dairy',
-      'Patisserie', 'Grains', 'Medicine', 'Others'
+      'Meat', 'Dairy', 'Fruits', 'Vegetables',
+      'Grains', 'Sweets', 'Beverages', 'Others'
     ];
 
     await showDialog(
@@ -228,12 +197,12 @@ class _ProductCardState extends State<ProductCard> {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: const Text('Edit Product Details'),
+              title: const Text('Edit Product'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Product Image Preview and Upload
+                    // Image preview/upload
                     GestureDetector(
                       onTap: () async {
                         final pickedImage = await _pickImage();
@@ -267,58 +236,42 @@ class _ProductCardState extends State<ProductCard> {
                             : null,
                       ),
                     ),
-                    const SizedBox(height: 5),
-                    Text(
-                      'Tap to change image',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                      ),
-                    ),
                     const SizedBox(height: 10),
 
-                    // Name TextField with validation
+                    // Name field
                     TextFormField(
                       controller: nameController,
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         labelText: 'Product Name',
-                        prefixIcon: const Icon(Icons.shopping_basket),
-                        errorText: nameController.text.isEmpty ? 'Name cannot be empty' : null,
+                        prefixIcon: Icon(Icons.shopping_basket),
                       ),
-                      validator: (value) =>
-                      value != null && value.isEmpty ? 'Name is required' : null,
                     ),
                     const SizedBox(height: 10),
 
-                    // Quantity TextField with validation
+                    // Quantity field
                     TextFormField(
                       controller: quantityController,
                       keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         labelText: 'Quantity',
-                        prefixIcon: const Icon(Icons.numbers),
-                        errorText: quantityController.text.isEmpty
-                            ? 'Quantity is required'
-                            : (int.tryParse(quantityController.text) == null
-                            ? 'Invalid number'
-                            : null),
+                        prefixIcon: Icon(Icons.numbers),
                       ),
                     ),
                     const SizedBox(height: 10),
 
-                    // Expiry Date Picker
+                    // Expiry date field
                     TextFormField(
                       controller: expiryController,
                       decoration: const InputDecoration(
                         labelText: 'Expiry Date',
                         prefixIcon: Icon(Icons.calendar_today),
                       ),
-                      readOnly: true, // Prevent keyboard from showing
+                      readOnly: true,
                       onTap: () async {
                         final pickedDate = await showDatePicker(
                           context: context,
                           initialDate: widget.expiryDate,
-                          firstDate: DateTime.now().subtract(const Duration(days: 365)), // Allow past dates for expired products
+                          firstDate: DateTime.now().subtract(const Duration(days: 365)),
                           lastDate: DateTime(2101),
                         );
                         if (pickedDate != null) {
@@ -331,7 +284,7 @@ class _ProductCardState extends State<ProductCard> {
                     ),
                     const SizedBox(height: 10),
 
-                    // Description TextField
+                    // Description field
                     TextFormField(
                       controller: descriptionController,
                       maxLines: 2,
@@ -342,7 +295,7 @@ class _ProductCardState extends State<ProductCard> {
                     ),
                     const SizedBox(height: 10),
 
-                    // Category Dropdown
+                    // Category dropdown
                     DropdownButtonFormField<String>(
                       value: selectedCategory,
                       hint: const Text('Select Category'),
@@ -375,7 +328,7 @@ class _ProductCardState extends State<ProductCard> {
                 else
                   ElevatedButton(
                     onPressed: () async {
-                      // Comprehensive Validation
+                      // Validate inputs
                       if (nameController.text.isEmpty ||
                           quantityController.text.isEmpty ||
                           int.tryParse(quantityController.text) == null) {
@@ -392,13 +345,13 @@ class _ProductCardState extends State<ProductCard> {
                         isUploading = true;
                       });
 
-                      // Upload new image to Cloudinary if selected
+                      // Upload new image if selected
                       String? photoUrl = currentPhotoUrl;
                       if (newImageFile != null) {
                         photoUrl = await _uploadToCloudinary(newImageFile!);
                       }
 
-                      // Parse the date from the controller
+                      // Parse date
                       DateTime expiryDate;
                       try {
                         expiryDate = DateFormat('MMM dd, yyyy').parse(expiryController.text);
@@ -415,7 +368,7 @@ class _ProductCardState extends State<ProductCard> {
                         return;
                       }
 
-                      // Save updated product
+                      // Update product
                       await _updateProduct(
                         nameController.text,
                         int.parse(quantityController.text),
@@ -431,7 +384,7 @@ class _ProductCardState extends State<ProductCard> {
 
                       Navigator.pop(context);
                     },
-                    child: const Text('Save Changes'),
+                    child: const Text('Save'),
                   ),
               ],
             );
@@ -441,7 +394,7 @@ class _ProductCardState extends State<ProductCard> {
     );
   }
 
-  // Update product in Firestore with comprehensive details including photo
+  // Update product in Firestore
   Future<void> _updateProduct(
       String name,
       int quantity,
@@ -450,8 +403,11 @@ class _ProductCardState extends State<ProductCard> {
       String? category,
       String? photoUrl,
       ) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
     try {
-      // Create data map with all fields
+      // Create data map
       final data = {
         'name': name,
         'quantity': quantity,
@@ -461,13 +417,15 @@ class _ProductCardState extends State<ProductCard> {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      // Only add photoUrl if it exists
+      // Add photo URL if it exists
       if (photoUrl != null) {
         data['photoUrl'] = photoUrl;
       }
 
       // Update Firestore
       await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
           .collection('products')
           .doc(widget.id)
           .update(data);
@@ -535,34 +493,15 @@ class _ProductCardState extends State<ProductCard> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Product Image with Enhanced UI - Now supports Cloudinary images
+              // Product Image
               GestureDetector(
                 onTap: () {
-                  // Show full image in a dialog with Cloudinary transformations for optimized viewing
                   if (widget.photoUrl != null && widget.photoUrl!.isNotEmpty) {
-                    // Modify URL to get optimized image if it's a Cloudinary URL
-                    String displayUrl = widget.photoUrl!;
-                    if (displayUrl.contains('cloudinary.com')) {
-                      // Add transformations for full-screen view - e.g., quality auto, format auto
-                      // This assumes standard Cloudinary URL structure
-                      final Uri uri = Uri.parse(displayUrl);
-                      final String path = uri.path;
-                      final int uploadIndex = path.indexOf('/upload/');
-
-                      if (uploadIndex != -1) {
-                        // Insert transformations after '/upload/'
-                        final String newPath = path.substring(0, uploadIndex + 8) +
-                            'q_auto,f_auto/' +
-                            path.substring(uploadIndex + 8);
-                        displayUrl = uri.replace(path: newPath).toString();
-                      }
-                    }
-
                     showDialog(
                       context: context,
                       builder: (context) => Dialog(
                         child: Image.network(
-                          displayUrl,
+                          widget.photoUrl!,
                           loadingBuilder: (context, child, loadingProgress) {
                             if (loadingProgress == null) return child;
                             return Center(
@@ -575,7 +514,7 @@ class _ProductCardState extends State<ProductCard> {
                             );
                           },
                           errorBuilder: (context, error, stackTrace) {
-                            return Center(
+                            return const Center(
                               child: Icon(Icons.error, color: Colors.red),
                             );
                           },
@@ -591,8 +530,7 @@ class _ProductCardState extends State<ProductCard> {
                     borderRadius: BorderRadius.circular(10),
                     image: widget.photoUrl != null && widget.photoUrl!.isNotEmpty
                         ? DecorationImage(
-                      // For thumbnails, we can optimize with Cloudinary transformations
-                      image: NetworkImage(_getOptimizedThumbnailUrl(widget.photoUrl!)),
+                      image: NetworkImage(widget.photoUrl!),
                       fit: BoxFit.cover,
                     )
                         : null,
@@ -622,7 +560,6 @@ class _ProductCardState extends State<ProductCard> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
-                    // Enhanced Details with Icons
                     _buildDetailRow(
                       icon: Icons.calendar_today,
                       text: 'Expires: $formattedDate',
@@ -653,13 +590,13 @@ class _ProductCardState extends State<ProductCard> {
                 ),
               ),
 
-              // Edit and More Options
+              // Actions
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, color: Colors.grey),
                 onSelected: (value) {
                   switch (value) {
                     case 'edit':
-                      _showDetailedEditDialog(context);
+                      _showEditDialog();
                       break;
                     case 'delete':
                       _deleteProduct(widget.id);
@@ -690,29 +627,7 @@ class _ProductCardState extends State<ProductCard> {
     );
   }
 
-  // Helper method to get optimized thumbnail URL from Cloudinary
-  String _getOptimizedThumbnailUrl(String url) {
-    // If it's a Cloudinary URL, add transformations for thumbnail
-    if (url.contains('cloudinary.com')) {
-      final Uri uri = Uri.parse(url);
-      final String path = uri.path;
-      final int uploadIndex = path.indexOf('/upload/');
-
-      if (uploadIndex != -1) {
-        // Insert transformations after '/upload/'
-        // w_160,h_160,c_fill = width 160px, height 160px, crop mode fill
-        // q_auto = automatic quality optimization
-        // f_auto = automatic format selection (WebP for supported browsers)
-        final String newPath = path.substring(0, uploadIndex + 8) +
-            'w_160,h_160,c_fill,q_auto,f_auto/' +
-            path.substring(uploadIndex + 8);
-        return uri.replace(path: newPath).toString();
-      }
-    }
-    return url;
-  }
-
-  // Helper method to build consistent detail rows
+  // Helper method for detail rows
   Widget _buildDetailRow({
     required IconData icon,
     required String text,

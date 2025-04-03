@@ -8,9 +8,9 @@ import 'package:expirydatetracker/utils/date_utils.dart';
 import 'package:intl/intl.dart';
 import 'package:expirydatetracker/models/product_model.dart';
 import 'package:expirydatetracker/widgets/bottom_nav.dart';
-// Add Cloudinary packages
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:path/path.dart' as path;
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AddProductPage extends StatefulWidget {
   const AddProductPage({super.key});
@@ -36,6 +36,7 @@ class _AddProductPageState extends State<AddProductPage>
   bool _isAutoMode = true;
   String? _selectedCategory;
   bool _isUploading = false; // Track image upload status
+  bool _isSaving = false; // Track product saving status
 
   // Current index for bottom navigation
   int _currentIndex = 1; // Set to 1 since we're on the Add Product page
@@ -57,6 +58,22 @@ class _AddProductPageState extends State<AddProductPage>
       ),
     );
     _animationController.forward();
+
+    // Verify authentication
+    _checkAuthentication();
+  }
+
+  // Check if user is authenticated
+  void _checkAuthentication() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You must be logged in to add products')),
+        );
+        Navigator.pushReplacementNamed(context, '/login'); // Redirect to login page
+      });
+    }
   }
 
   @override
@@ -119,8 +136,7 @@ class _AddProductPageState extends State<AddProductPage>
     }
   }
 
-  // New method to upload image to Cloudinary
-  // New method to upload image to Cloudinary
+  // Upload image to Cloudinary
   Future<void> _uploadImageToCloudinary() async {
     if (_productImage == null) return;
 
@@ -137,7 +153,7 @@ class _AddProductPageState extends State<AddProductPage>
         CloudinaryFile.fromFile(
           _productImage!.path,
           folder: 'expiry_products', // Organize files in a folder
-          resourceType: CloudinaryResourceType.Image, // Note the capital "I" here
+          resourceType: CloudinaryResourceType.Image,
         ),
       );
 
@@ -157,6 +173,7 @@ class _AddProductPageState extends State<AddProductPage>
         _isUploading = false;
       });
 
+      print('Cloudinary Upload Error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to upload image: $e')),
@@ -213,6 +230,7 @@ class _AddProductPageState extends State<AddProductPage>
       if (mounted) {
         Navigator.pop(context);
       }
+      print('Scan Error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error scanning product: $e')),
@@ -271,15 +289,23 @@ class _AddProductPageState extends State<AddProductPage>
     );
   }
 
-  void _saveProduct() async {
-    if (_nameController.text.isEmpty || _expiryController.text.isEmpty) {
+  bool _validateForm() {
+    // Check required fields
+    if (_nameController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all required fields')),
+        const SnackBar(content: Text('Please enter a product name')),
       );
-      return;
+      return false;
     }
 
-    // Convert string date to DateTime
+    if (_expiryController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select an expiry date')),
+      );
+      return false;
+    }
+
+    // Validate expiry date format
     DateTime? expiryDate;
     try {
       expiryDate = DateFormat('yyyy-MM-dd').parse(_expiryController.text);
@@ -287,18 +313,53 @@ class _AddProductPageState extends State<AddProductPage>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Invalid date format. Use YYYY-MM-DD')),
       );
-      return;
+      return false;
     }
 
-    // Check if image is still uploading
+    // Validate category is selected
+    if (_selectedCategory == null || _selectedCategory!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a category')),
+      );
+      return false;
+    }
+
+    // Check if image is uploading
     if (_isUploading) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please wait, image is still uploading')),
       );
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<void> _saveProduct() async {
+    // Check if already saving
+    if (_isSaving) return;
+
+    // Validate form fields
+    if (!_validateForm()) return;
+
+    // Convert string date to DateTime
+    DateTime expiryDate = DateFormat('yyyy-MM-dd').parse(_expiryController.text);
+
+    // Check if user is authenticated
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You must be logged in to add products')),
+      );
+      Navigator.pushReplacementNamed(context, '/login');
       return;
     }
 
     // Show loading indicator
+    setState(() {
+      _isSaving = true;
+    });
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -308,6 +369,7 @@ class _AddProductPageState extends State<AddProductPage>
     );
 
     try {
+      // Create the product object
       final product = Product(
         name: _nameController.text,
         expiryDate: expiryDate,
@@ -317,24 +379,48 @@ class _AddProductPageState extends State<AddProductPage>
             ? int.parse(_quantityController.text)
             : 1,
         photoUrl: _productImageUrl,
+        userId: user.uid, // Explicitly set the user ID
       );
 
-      await product.save();
+      // Debug print
+      print('Saving product: ${product.toFirestore()}');
+
+      // Save to Firebase
+      final docRef = await product.save();
+      print('Product saved with ID: ${docRef.id}');
 
       // Close loading dialog
-      Navigator.of(context).pop();
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Product added successfully')),
-      );
-      Navigator.pushReplacementNamed(context, '/home');
+      setState(() {
+        _isSaving = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Product added successfully')),
+        );
+        Navigator.pushReplacementNamed(context, '/home');
+      }
     } catch (error) {
       // Close loading dialog
-      Navigator.of(context).pop();
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to add product: $error')),
-      );
+      setState(() {
+        _isSaving = false;
+      });
+
+      print('Detailed save error: $error');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add product: $error')),
+        );
+      }
     }
   }
 

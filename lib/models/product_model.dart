@@ -40,6 +40,10 @@ class Product {
     // Get current user ID if not provided
     String? currentUserId = userId ?? FirebaseAuth.instance.currentUser?.uid;
 
+    if (currentUserId == null) {
+      throw Exception('User not authenticated');
+    }
+
     return {
       'name': name,
       'expiryDate': Timestamp.fromDate(expiryDate),
@@ -147,94 +151,135 @@ class Product {
     }
   }
 
-  // Get user-specific collection reference - using structure from first version
-  static CollectionReference<Map<String, dynamic>> getUserProductsCollection(String userId) {
+  // Centralized user products collection reference - private method
+  static CollectionReference<Map<String, dynamic>> _userProductsCollection() {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
     return FirebaseFirestore.instance
         .collection('users')
         .doc(userId)
         .collection('products');
   }
 
-  // Alternative collection reference - using structure from second version
+  // Standard collection reference - Using consistent structure throughout the app
   static CollectionReference<Map<String, dynamic>> getProductsCollection(String userId) {
     return FirebaseFirestore.instance
-        .collection('products')
+        .collection('users')
         .doc(userId)
-        .collection('items');
+        .collection('products');
   }
 
-  // Get current user's collection reference - using structure from first version
+  // Get current user's collection reference
   static CollectionReference<Map<String, dynamic>> get currentUserProductsCollection {
-    final userId = FirebaseAuth.instance.currentUser?.uid;
-    if (userId == null) {
-      throw Exception('User not authenticated');
-    }
-    return getUserProductsCollection(userId);
+    return _userProductsCollection();
   }
 
-  // Save product to Firestore - using structure from first version
+  // Save product to Firestore with improved error handling
   Future<DocumentReference> save() async {
-    final userId = FirebaseAuth.instance.currentUser?.uid;
-    if (userId == null) {
-      throw Exception('User not authenticated');
-    }
-
-    final collection = getUserProductsCollection(userId);
-
-    // If the product has an ID, update it, otherwise create a new one
-    if (id != null) {
-      await collection.doc(id).update(toFirestore());
-      return collection.doc(id);
-    } else {
-      return await collection.add(toFirestore());
-    }
-  }
-
-  // Alternative save method - using structure from second version
-  Future<DocumentReference> saveToProductsCollection() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw Exception('User must be logged in to save a product');
-    }
-
     try {
-      final productsRef = getProductsCollection(user.uid);
+      final collection = _userProductsCollection();
+      final data = toFirestore();
 
-      // If the product has an ID, update it, otherwise create a new one
       if (id != null) {
-        await productsRef.doc(id).update(toFirestore());
-        return productsRef.doc(id);
+        await collection.doc(id!).update(data);
+        return collection.doc(id!);
       } else {
-        return await productsRef.add(toFirestore());
+        return await collection.add(data);
       }
     } catch (e) {
+      print('Firebase Error Saving Product: $e');
       throw Exception('Failed to save product: $e');
     }
   }
 
   // Delete product method
   Future<void> delete() async {
-    final userId = FirebaseAuth.instance.currentUser?.uid;
-    if (userId == null) {
-      throw Exception('User not authenticated');
-    }
-
     if (id == null) {
       throw Exception('Cannot delete a product without an ID');
     }
 
-    final collection = getUserProductsCollection(userId);
-    await collection.doc(id).delete();
+    try {
+      await _userProductsCollection().doc(id!).delete();
+    } catch (e) {
+      print('Firebase Error Deleting Product: $e');
+      throw Exception('Failed to delete product: $e');
+    }
   }
 
-  // Fetch products by expiry status
+  // Stream all user products
+  static Stream<List<Product>> streamUserProducts() {
+    return _userProductsCollection()
+        .orderBy('expiryDate')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => Product.fromFirestore(doc))
+        .toList());
+  }
+
+  // Stream products by expiry status
+  static Stream<List<Product>> streamProductsByExpiryStatus(String status) {
+    final collection = _userProductsCollection();
+    final now = DateTime.now();
+    Query query;
+
+    switch (status) {
+      case 'Expired':
+        query = collection.where('expiryDate', isLessThan: Timestamp.fromDate(now));
+        break;
+      case 'Expires Today/Tomorrow':
+        final tomorrow = now.add(const Duration(days: 1));
+        query = collection
+            .where('expiryDate', isGreaterThanOrEqualTo: Timestamp.fromDate(now))
+            .where('expiryDate', isLessThanOrEqualTo: Timestamp.fromDate(tomorrow));
+        break;
+      case 'Expires This Week':
+        final nextWeek = now.add(const Duration(days: 7));
+        final tomorrow = now.add(const Duration(days: 1));
+        query = collection
+            .where('expiryDate', isGreaterThan: Timestamp.fromDate(tomorrow))
+            .where('expiryDate', isLessThanOrEqualTo: Timestamp.fromDate(nextWeek));
+        break;
+      case 'Expires This Month':
+        final nextMonth = now.add(const Duration(days: 30));
+        final nextWeek = now.add(const Duration(days: 7));
+        query = collection
+            .where('expiryDate', isGreaterThan: Timestamp.fromDate(nextWeek))
+            .where('expiryDate', isLessThanOrEqualTo: Timestamp.fromDate(nextMonth));
+        break;
+      case 'Valid':
+        final nextMonth = now.add(const Duration(days: 30));
+        query = collection.where('expiryDate', isGreaterThan: Timestamp.fromDate(nextMonth));
+        break;
+      default:
+        query = collection.orderBy('expiryDate');
+    }
+
+    return query.snapshots().map((snapshot) {
+      final docs = snapshot.docs;
+      return docs.map((doc) => Product.fromFirestore(doc)).toList();
+    });
+  }
+
+  // Stream products by category
+  static Stream<List<Product>> streamProductsByCategory(String category) {
+    return _userProductsCollection()
+        .where('category', isEqualTo: category)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => Product.fromFirestore(doc))
+        .toList());
+  }
+
+  // Fetch products by expiry status (non-stream version)
   static Future<List<Product>> getProductsByExpiryStatus(String status) async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
     if (userId == null) {
       throw Exception('User not authenticated');
     }
 
-    final collection = getUserProductsCollection(userId);
+    final collection = getProductsCollection(userId);
 
     // Define query based on status
     Query query;
@@ -272,19 +317,29 @@ class Product {
         query = collection.orderBy('expiryDate');
     }
 
-    final snapshot = await query.get();
-    return snapshot.docs.map((doc) => Product.fromFirestore(doc)).toList();
+    try {
+      final snapshot = await query.get();
+      return snapshot.docs.map((doc) => Product.fromFirestore(doc)).toList();
+    } catch (e) {
+      print('Firebase Error Fetching Products: $e');
+      throw Exception('Failed to fetch products: $e');
+    }
   }
 
-  // Fetch products by category
+  // Fetch products by category (non-stream version)
   static Future<List<Product>> getProductsByCategory(String category) async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
     if (userId == null) {
       throw Exception('User not authenticated');
     }
 
-    final collection = getUserProductsCollection(userId);
-    final snapshot = await collection.where('category', isEqualTo: category).get();
-    return snapshot.docs.map((doc) => Product.fromFirestore(doc)).toList();
+    try {
+      final collection = getProductsCollection(userId);
+      final snapshot = await collection.where('category', isEqualTo: category).get();
+      return snapshot.docs.map((doc) => Product.fromFirestore(doc)).toList();
+    } catch (e) {
+      print('Firebase Error Fetching Products by Category: $e');
+      throw Exception('Failed to fetch products by category: $e');
+    }
   }
 }
