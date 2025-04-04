@@ -9,8 +9,10 @@ import 'package:intl/intl.dart';
 import 'package:expirydatetracker/models/product_model.dart';
 import 'package:expirydatetracker/widgets/bottom_nav.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' as path;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class AddProductPage extends StatefulWidget {
   const AddProductPage({super.key});
@@ -87,6 +89,8 @@ class _AddProductPageState extends State<AddProductPage>
   }
 
   Future<void> _pickProductImage() async {
+    if (_isUploading) return; // Prevent multiple uploads
+
     final ImagePicker picker = ImagePicker();
     try {
       final XFile? image = await showDialog(
@@ -136,7 +140,7 @@ class _AddProductPageState extends State<AddProductPage>
     }
   }
 
-  // Upload image to Cloudinary
+  // Upload image to Cloudinary with compression
   Future<void> _uploadImageToCloudinary() async {
     if (_productImage == null) return;
 
@@ -145,15 +149,28 @@ class _AddProductPageState extends State<AddProductPage>
         _isUploading = true;
       });
 
-      // Get the file name from the path
-      final fileName = path.basename(_productImage!.path);
+      // Compress the image before uploading
+      final compressedImage = await FlutterImageCompress.compressWithFile(
+        _productImage!.path,
+        quality: 70, // Adjust quality as needed (0-100)
+      );
+
+      if (compressedImage == null) {
+        throw Exception("Failed to compress image");
+      }
+
+      // Get a unique filename using timestamp and user ID
+      final user = FirebaseAuth.instance.currentUser;
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'product_${user?.uid}_$timestamp';
 
       // Create a CloudinaryResponse by uploading the file
       final response = await cloudinary.uploadFile(
         CloudinaryFile.fromFile(
           _productImage!.path,
-          folder: 'expiry_products', // Organize files in a folder
+          folder: 'expiry_products',
           resourceType: CloudinaryResourceType.Image,
+          publicId: fileName, // Use the unique filename
         ),
       );
 
@@ -378,8 +395,8 @@ class _AddProductPageState extends State<AddProductPage>
         quantity: _quantityController.text.isNotEmpty
             ? int.parse(_quantityController.text)
             : 1,
-        photoUrl: _productImageUrl,
-        userId: user.uid, // Explicitly set the user ID
+        photoUrl: _productImageUrl, // This should be the Cloudinary URL
+        userId: user.uid,
       );
 
       // Debug print
@@ -432,6 +449,113 @@ class _AddProductPageState extends State<AddProductPage>
         index == 0 ? '/home' : '/profile',
       );
     }
+  }
+
+  // Improved image section with better loading indicator
+  Widget _buildImageSection() {
+    return Card(
+      color: Colors.transparent,
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            GestureDetector(
+              onTap: _isUploading ? null : _pickProductImage, // Disable when uploading
+              child: Container(
+                width: 150,
+                height: 150,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _isUploading ? Colors.grey : Colors.deepOrange,
+                    width: 2,
+                  ),
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    if (_productImage != null)
+                      ClipOval(
+                        child: Image.file(
+                          _productImage!,
+                          fit: BoxFit.cover,
+                          width: 150,
+                          height: 150,
+                        ),
+                      )
+                    else
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(
+                            Icons.add_photo_alternate,
+                            size: 50,
+                            color: Colors.deepOrange,
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Add Product Photo',
+                            style: TextStyle(
+                              color: Colors.deepOrange,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'Poppins',
+                            ),
+                          ),
+                        ],
+                      ),
+                    if (_isUploading)
+                      Container(
+                        width: 150,
+                        height: 150,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Uploading...',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            if (_productImageUrl != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green[200], size: 16),
+                    SizedBox(width: 4),
+                    Text(
+                      'Image uploaded to cloud',
+                      style: TextStyle(
+                        color: Colors.green[200],
+                        fontFamily: 'Poppins',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -540,92 +664,8 @@ class _AddProductPageState extends State<AddProductPage>
                 ),
                 const SizedBox(height: 16),
 
-                // Product Image
-                Card(
-                  color: Colors.transparent,
-                  elevation: 0,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        GestureDetector(
-                          onTap: _pickProductImage,
-                          child: Container(
-                            width: 150,
-                            height: 150,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.deepOrange,
-                                width: 2,
-                              ),
-                            ),
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                if (_productImage != null)
-                                  ClipOval(
-                                    child: Image.file(
-                                      _productImage!,
-                                      fit: BoxFit.cover,
-                                      width: 150,
-                                      height: 150,
-                                    ),
-                                  )
-                                else
-                                  Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: const [
-                                      Icon(
-                                        Icons.add_photo_alternate,
-                                        size: 50,
-                                        color: Colors.deepOrange,
-                                      ),
-                                      SizedBox(height: 8),
-                                      Text(
-                                        'Add Product Photo',
-                                        style: TextStyle(
-                                          color: Colors.deepOrange,
-                                          fontWeight: FontWeight.bold,
-                                          fontFamily: 'Poppins',
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                if (_isUploading)
-                                  Container(
-                                    width: 150,
-                                    height: 150,
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.5),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Center(
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (_productImageUrl != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Text(
-                              'Image uploaded to cloud ✓',
-                              style: TextStyle(
-                                color: Colors.green[200],
-                                fontFamily: 'Poppins',
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
+                // Product Image with improved UI
+                _buildImageSection(),
                 const SizedBox(height: 16),
 
                 // Scan Button (Only visible in Auto mode)
@@ -793,7 +833,7 @@ class _AddProductPageState extends State<AddProductPage>
                     borderRadius: BorderRadius.circular(26),
                   ),
                   child: ElevatedButton(
-                    onPressed: _saveProduct,
+                    onPressed: _isSaving ? null : _saveProduct,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.all(16),
                       backgroundColor: Colors.transparent,
@@ -802,7 +842,9 @@ class _AddProductPageState extends State<AddProductPage>
                       ),
                       elevation: 0,
                     ),
-                    child: const Text(
+                    child: _isSaving
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text(
                       'Save Product',
                       style: TextStyle(
                         fontSize: 18,

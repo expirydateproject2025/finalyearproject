@@ -172,6 +172,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // Build the product list
+  // Build the product list
   Widget _buildProductList(List<Map<String, dynamic>> products) {
     final processedProducts = _getFilteredAndSortedProducts(products);
 
@@ -203,17 +204,63 @@ class _HomeScreenState extends State<HomeScreen> {
       itemCount: processedProducts.length,
       itemBuilder: (context, index) {
         final product = processedProducts[index];
-        final daysUntilExpiry = product['expiryDate'].difference(DateTime.now()).inDays;
         return ProductCard(
           id: product['id'],
           name: product['name'],
           expiryDate: product['expiryDate'],
           quantity: product['quantity'],
+          category: product['category'] ?? 'Unknown',
+          photoUrl: product['photoUrl'],
+          onTap: () {
+            // Navigate to product detail page
+            // Example:
+            // Navigator.push(
+            //   context,
+            //   MaterialPageRoute(
+            //     builder: (context) => ProductDetailPage(
+            //       product: Product.fromMap({...product}),
+            //     ),
+            //   ),
+            // );
+          },
           onEdit: (id) {
             // Handle edit action
+            // Example:
+            // Navigator.push(
+            //   context,
+            //   MaterialPageRoute(
+            //     builder: (context) => EditProductPage(
+            //       productId: id,
+            //     ),
+            //   ),
+            // );
           },
           onDelete: (id) {
             // Handle delete action
+            // Example:
+            // showDialog(
+            //   context: context,
+            //   builder: (BuildContext context) {
+            //     return AlertDialog(
+            //       title: const Text('Delete Product'),
+            //       content: const Text('Are you sure you want to delete this product?'),
+            //       actions: [
+            //         TextButton(
+            //           child: const Text('Cancel'),
+            //           onPressed: () => Navigator.of(context).pop(),
+            //         ),
+            //         TextButton(
+            //           child: const Text('Delete'),
+            //           onPressed: () {
+            //             // Delete product from Firestore
+            //             FirebaseFirestore.instance.collection('products').doc(id).delete();
+            //             Navigator.of(context).pop();
+            //           },
+            //         ),
+            //       ],
+            //     );
+            //   },
+            // );
           },
         );
       },
