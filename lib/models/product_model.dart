@@ -9,8 +9,6 @@ class Product {
   final String? reminder;
   final int? quantity;
   final String? photoUrl;
-  final String? barcode;
-  final String? notes;
   final String? userId;
   final bool notificationsScheduled;
   final Map<String, dynamic>? scheduledNotifications;
@@ -25,8 +23,6 @@ class Product {
     this.reminder,
     this.quantity,
     this.photoUrl,
-    this.barcode,
-    this.notes,
     this.userId,
     this.notificationsScheduled = false,
     this.scheduledNotifications,
@@ -51,8 +47,6 @@ class Product {
       'reminder': reminder,
       'quantity': quantity ?? 1,
       'photoUrl': photoUrl,
-      'barcode': barcode,
-      'notes': notes,
       'userId': currentUserId,
       'notificationsScheduled': notificationsScheduled,
       'scheduledNotifications': scheduledNotifications,
@@ -79,8 +73,6 @@ class Product {
       reminder: data['reminder'],
       quantity: data['quantity'] is int ? data['quantity'] : 1,
       photoUrl: data['photoUrl'],
-      barcode: data['barcode'],
-      notes: data['notes'],
       userId: data['userId'],
       notificationsScheduled: data['notificationsScheduled'] ?? false,
       scheduledNotifications: data['scheduledNotifications'],
@@ -102,8 +94,6 @@ class Product {
     String? reminder,
     int? quantity,
     String? photoUrl,
-    String? barcode,
-    String? notes,
     String? userId,
     bool? notificationsScheduled,
     Map<String, dynamic>? scheduledNotifications,
@@ -118,8 +108,6 @@ class Product {
       reminder: reminder ?? this.reminder,
       quantity: quantity ?? this.quantity,
       photoUrl: photoUrl ?? this.photoUrl,
-      barcode: barcode ?? this.barcode,
-      notes: notes ?? this.notes,
       userId: userId ?? this.userId,
       notificationsScheduled: notificationsScheduled ?? this.notificationsScheduled,
       scheduledNotifications: scheduledNotifications ?? this.scheduledNotifications,
@@ -157,7 +145,12 @@ class Product {
     if (userId == null) {
       throw Exception('User not authenticated');
     }
-    return FirebaseFirestore.instance
+
+    // Ensure the Firestore instance is properly initialized
+    final firestore = FirebaseFirestore.instance;
+
+    // Create a more robust path to user's products
+    return firestore
         .collection('users')
         .doc(userId)
         .collection('products');

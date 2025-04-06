@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
@@ -354,6 +355,7 @@ class _AddProductPageState extends State<AddProductPage>
 
   Future<void> _saveProduct() async {
     // Check if already saving
+
     if (_isSaving) return;
 
     // Validate form fields
@@ -387,22 +389,32 @@ class _AddProductPageState extends State<AddProductPage>
 
     try {
       // Create the product object
+      final int quantity;
+      try {
+        quantity = _quantityController.text.isNotEmpty
+            ? int.parse(_quantityController.text)
+            : 1;
+      } catch (e) {
+        throw Exception('Invalid quantity format: ${_quantityController.text}');
+      }
+
       final product = Product(
         name: _nameController.text,
         expiryDate: expiryDate,
         category: _selectedCategory ?? 'Other',
         reminder: _selectedReminder,
-        quantity: _quantityController.text.isNotEmpty
-            ? int.parse(_quantityController.text)
-            : 1,
-        photoUrl: _productImageUrl, // This should be the Cloudinary URL
+        quantity: quantity,
+        photoUrl: _productImageUrl,
         userId: user.uid,
       );
 
-      // Debug print
-      print('Saving product: ${product.toFirestore()}');
+      // Debug print product data
+      print('About to save product with data: ${product.toFirestore()}');
 
-      // Save to Firebase
+      // Verify Firestore structure
+      print('Saving to collection: users/${user.uid}/products');
+
+      // Save the product
       final docRef = await product.save();
       print('Product saved with ID: ${docRef.id}');
 
@@ -431,7 +443,12 @@ class _AddProductPageState extends State<AddProductPage>
         _isSaving = false;
       });
 
-      print('Detailed save error: $error');
+      print('DETAILED SAVE ERROR: $error');
+      print('Error type: ${error.runtimeType}');
+      if (error is FirebaseException) {
+        print('Firebase error code: ${error.code}');
+        print('Firebase error message: ${error.message}');
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

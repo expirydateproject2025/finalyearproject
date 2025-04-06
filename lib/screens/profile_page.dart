@@ -1,222 +1,382 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../theme/app_theme.dart';
-import '../services/auth_service.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'package:firebase_storage/firebase_storage.dart';
 
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
+  const ProfilePage({Key? key}) : super(key: key);
 
   @override
-  State<ProfilePage> createState() => _ProfilePageState();
+  _ProfilePageState createState() => _ProfilePageState();
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  final _authService = AuthService();
-  bool _isLoading = false;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
 
-  Future<void> _signOut() async {
-    setState(() => _isLoading = true);
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+
+  bool _isLoading = true;
+  bool _isEditing = false;
+  File? _profileImage;
+  String? _profileImageUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
-      await _authService.signOut();
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      final user = _auth.currentUser;
+      if (user != null) {
+        final userData = await _firestore.collection('users').doc(user.uid).get();
+
+        if (userData.exists) {
+          final data = userData.data() as Map<String, dynamic>;
+          setState(() {
+            _nameController.text = data['name'] ?? '';
+            _emailController.text = user.email ?? '';
+            _profileImageUrl = data['profileImageUrl'];
+          });
+        } else {
+          // First time user, initialize with email only
+          _emailController.text = user.email ?? '';
+        }
       }
     } catch (e) {
-      if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading profile: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      setState(() {
+        _profileImage = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<void> _saveProfile() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        String? imageUrl = _profileImageUrl;
+
+        // Upload new image if selected
+        if (_profileImage != null) {
+          final ref = _storage.ref().child('profile_images/${user.uid}');
+          await ref.putFile(_profileImage!);
+          imageUrl = await ref.getDownloadURL();
+        }
+
+        // Update user data in Firestore
+        await _firestore.collection('users').doc(user.uid).set({
+          'name': _nameController.text,
+          'profileImageUrl': imageUrl,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        setState(() {
+          _profileImageUrl = imageUrl;
+          _isEditing = false;
+        });
+
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
+          const SnackBar(content: Text('Profile updated successfully')),
         );
       }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error updating profile: $e')),
+      );
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _signOut() async {
+    try {
+      await _auth.signOut();
+      // Navigate to login screen or perform other actions
+      // Typically you'd use Navigator to redirect to login page
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error signing out: $e')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Profile'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () {
-              // Navigate to edit profile
-              Navigator.pushNamed(context, '/edit-profile');
-            },
+        title: const Text(
+          'Profile',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
           ),
+        ),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Color(0xFFDA4E00),
+                Color(0xFFFFD834),
+              ],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+          ),
+        ),
+        actions: [
+          if (!_isEditing)
+            IconButton(
+              icon: const Icon(Icons.edit, color: Colors.white),
+              onPressed: () => setState(() => _isEditing = true),
+            ),
+          if (_isEditing)
+            IconButton(
+              icon: const Icon(Icons.save, color: Colors.white),
+              onPressed: _saveProfile,
+            ),
         ],
       ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(user?.uid)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final userData = snapshot.data?.data() as Map<String, dynamic>?;
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFF070625),
+              Color(0xFF120D9C),
+            ],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: Colors.white))
+            : SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const CircleAvatar(
-                  radius: 50,
-                  backgroundColor: AppTheme.primaryColor,
-                  child: Icon(Icons.person, size: 50, color: Colors.white),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  userData?['name'] ?? 'User',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+                // Profile Image
+                GestureDetector(
+                  onTap: _isEditing ? _pickImage : null,
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white,
+                            width: 3,
+                          ),
+                        ),
+                        child: CircleAvatar(
+                          radius: 60,
+                          backgroundColor: Colors.grey[200],
+                          backgroundImage: _profileImage != null
+                              ? FileImage(_profileImage!) as ImageProvider
+                              : _profileImageUrl != null
+                              ? NetworkImage(_profileImageUrl!) as ImageProvider
+                              : const AssetImage('assets/default_profile.png') as ImageProvider,
+                        ),
+                      ),
+                      if (_isEditing)
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFFD834),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.camera_alt,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                    ],
                   ),
-                ),
-                Text(
-                  user?.email ?? '',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: AppTheme.secondaryColor,
-                  ),
-                ),
-                const SizedBox(height: 32),
-                _buildProfileCard(
-                  title: 'Account Settings',
-                  items: [
-                    ProfileMenuItem(
-                      icon: Icons.person_outline,
-                      title: 'Personal Information',
-                      onTap: () {
-                        // Navigate to personal info
-                      },
-                    ),
-                    ProfileMenuItem(
-                      icon: Icons.notifications_outlined,
-                      title: 'Notification Settings',
-                      onTap: () {
-                        // Navigate to notification settings
-                      },
-                    ),
-                    ProfileMenuItem(
-                      icon: Icons.lock_outline,
-                      title: 'Change Password',
-                      onTap: () {
-                        // Navigate to change password
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _buildProfileCard(
-                  title: 'App Settings',
-                  items: [
-                    ProfileMenuItem(
-                      icon: Icons.language,
-                      title: 'Language',
-                      onTap: () {
-                        // Navigate to language settings
-                      },
-                    ),
-                    ProfileMenuItem(
-                      icon: Icons.help_outline,
-                      title: 'Help & Support',
-                      onTap: () {
-                        // Navigate to help
-                      },
-                    ),
-                    ProfileMenuItem(
-                      icon: Icons.info_outline,
-                      title: 'About',
-                      onTap: () {
-                        // Navigate to about
-                      },
-                    ),
-                  ],
                 ),
                 const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _signOut,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+
+                // Name
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Name',
+                    labelStyle: TextStyle(color: Colors.white70),
+                    border: OutlineInputBorder(),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white30),
                     ),
-                    child: Text(
-                      _isLoading ? 'Logging out...' : 'Logout',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.white,
-                      ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xFFFFD834)),
+                    ),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  enabled: _isEditing,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your name';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Email
+                TextFormField(
+                  controller: _emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    labelStyle: TextStyle(color: Colors.white70),
+                    border: OutlineInputBorder(),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white30),
+                    ),
+                    disabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white30),
+                    ),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  enabled: false,
+                ),
+                const SizedBox(height: 24),
+
+                // Account Stats
+                Card(
+                  color: Colors.white.withOpacity(0.1),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Account Statistics',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _buildStatItem(
+                          icon: Icons.calendar_today,
+                          label: 'Total Items Tracked',
+                          value: '0', // Replace with actual count from Firestore
+                        ),
+                        _buildStatItem(
+                          icon: Icons.warning_amber_rounded,
+                          label: 'Items Expiring Soon',
+                          value: '0', // Replace with actual count from Firestore
+                        ),
+                        _buildStatItem(
+                          icon: Icons.check_circle_outline,
+                          label: 'Items Tracked This Month',
+                          value: '0', // Replace with actual count from Firestore
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Sign Out Button
+                ElevatedButton.icon(
+                  onPressed: _signOut,
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Sign Out'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50),
+                    backgroundColor: const Color(0xFFDA4E00),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                 ),
               ],
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildProfileCard({
-    required String title,
-    required List<ProfileMenuItem> items,
+  Widget _buildStatItem({
+    required IconData icon,
+    required String label,
+    required String value,
   }) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              title,
+          Icon(icon, color: const Color(0xFFFFD834)),
+          const SizedBox(width: 12),
+          Text(
+              label,
               style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+                fontSize: 16,
+                color: Colors.white,
+              )
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
             ),
           ),
-          const Divider(height: 1),
-          ...items.map((item) => Column(
-            children: [
-              ListTile(
-                leading: Icon(item.icon, color: AppTheme.primaryColor),
-                title: Text(item.title),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                onTap: item.onTap,
-              ),
-              if (items.last != item) const Divider(height: 1),
-            ],
-          )),
         ],
       ),
     );
   }
-}
 
-class ProfileMenuItem {
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-
-  ProfileMenuItem({
-    required this.icon,
-    required this.title,
-    required this.onTap,
-  });
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    super.dispose();
+  }
 }
