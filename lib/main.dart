@@ -1,16 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:provider/provider.dart';
 import 'firebase_options.dart';
+
+// Screens
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/signup_screen.dart';
 import 'screens/auth/forgot_password_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/notification_page.dart';
-import 'services/notification_service.dart';
-import 'routes/app_routes.dart';
 import 'screens/add_product_page.dart';
+import 'screens/profile_page.dart';
+import 'widgets/about_page.dart';
+
+// Services
+import 'services/notification_service.dart';
+
+// Routes
+import 'routes/app_routes.dart';
+
+// Theme
 import 'theme/app_theme.dart';
+
+// Models/Providers
+import 'models/ProductProvider.dart';
 
 /// Background message handler (MUST be top-level function)
 @pragma('vm:entry-point')
@@ -82,19 +96,27 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Expiry Date Tracker',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.theme,
-      home: AppRoutes.getInitialScreen(), // Use auth check method to determine initial screen
-      routes: {
-        '/login': (context) => const LoginScreen(),
-        '/signup': (context) => const SignupScreen(),
-        '/forgot-password': (context) => const ForgotPasswordScreen(),
-        '/home': (context) => const HomeScreen(),
-        '/notifications': (context) => const NotificationPage(),
-        '/AddProduct': (context) => const AddProductPage(),
-      },
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ProductProvider()),
+        // Add other providers here as needed
+      ],
+      child: MaterialApp(
+        title: 'Expiry Date Tracker',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.theme,
+        home: AppRoutes.getInitialScreen(),
+        routes: {
+          '/login': (context) => const LoginScreen(),
+          '/signup': (context) => const SignupScreen(),
+          '/forgot-password': (context) => const ForgotPasswordScreen(),
+          '/home': (context) => const HomeScreen(),
+          '/notifications': (context) => const NotificationPage(),
+          '/add-product': (context) => const AddProductPage(),
+          '/profile': (context) => const ProfilePage(),
+          '/about': (context) => const AboutPage(),
+        },
+      ),
     );
   }
 }

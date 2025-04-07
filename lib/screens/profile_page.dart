@@ -7,7 +7,8 @@ import 'package:intl/intl.dart';
 import 'package:expirydatetracker/models/product_model.dart';
 import 'dart:io';
 import 'package:provider/provider.dart';
-import 'package:expirydatetracker/models//ProductProvider.dart';
+import 'package:expirydatetracker/models/ProductProvider.dart';
+import 'package:expirydatetracker/widgets/about_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({Key? key}) : super(key: key);
@@ -17,6 +18,23 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
+  @override
+  Widget build(BuildContext context) {
+    // Wrap the content with a ChangeNotifierProvider to ensure
+    // the ProductProvider is available in this widget tree
+    return ChangeNotifierProvider(
+      create: (_) => ProductProvider(),
+      child: ProfilePageContent(),
+    );
+  }
+}
+
+class ProfilePageContent extends StatefulWidget {
+  @override
+  _ProfilePageContentState createState() => _ProfilePageContentState();
+}
+
+class _ProfilePageContentState extends State<ProfilePageContent> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -25,6 +43,7 @@ class _ProfilePageState extends State<ProfilePage> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
+  // Removed _aboutController
 
   bool _isLoading = true;
   bool _isEditing = false;
@@ -51,6 +70,7 @@ class _ProfilePageState extends State<ProfilePage> {
             _nameController.text = userDoc['name'] ?? '';
             _emailController.text = user.email ?? '';
             _profileImageUrl = userDoc['profileImageUrl'];
+            // Removed loading about text
           });
         }
       }
@@ -112,6 +132,7 @@ class _ProfilePageState extends State<ProfilePage> {
       if (user != null) {
         await _firestore.collection('users').doc(user.uid).set({
           'name': _nameController.text,
+          // Removed about field from the save operation
           'lastUpdated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
@@ -138,19 +159,6 @@ class _ProfilePageState extends State<ProfilePage> {
         SnackBar(content: Text('Error signing out: $e')),
       );
     }
-  }
-
-  // Statistics methods (would connect to your products collection)
-  int _getTotalItems(BuildContext context) {
-    return Provider.of<ProductProvider>(context, listen: false).totalItems;
-  }
-
-  int _getExpiringSoon(BuildContext context) {
-    return Provider.of<ProductProvider>(context, listen: false).expiringSoon;
-  }
-
-  int _getTrackedThisMonth(BuildContext context) {
-    return Provider.of<ProductProvider>(context, listen: false).trackedThisMonth;
   }
 
   Widget _buildStatsView() {
@@ -209,7 +217,7 @@ class _ProfilePageState extends State<ProfilePage> {
             },
           );
         }
-        );
+    );
   }
 
   @override
@@ -247,6 +255,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
         ],
       ),
+
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -255,58 +264,65 @@ class _ProfilePageState extends State<ProfilePage> {
             end: Alignment.bottomCenter,
           ),
         ),
+
         child: _isLoading
             ? const Center(child: CircularProgressIndicator(color: Colors.white))
             : SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
           child: Form(
             key: _formKey,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                GestureDetector(
-                  onTap: _isEditing ? _pickImage : null,
-                  child: Stack(
-                    alignment: Alignment.bottomRight,
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white,
-                            width: 3,
-                          ),
-                        ),
-                        child: CircleAvatar(
-                          radius: 60,
-                          backgroundColor: Colors.grey[200],
-                          backgroundImage: _profileImage != null
-                              ? FileImage(_profileImage!) as ImageProvider
-                              : _profileImageUrl != null
-                              ? NetworkImage(_profileImageUrl!) as ImageProvider
-                              : const AssetImage('assets/default_profile.png') as ImageProvider,
-                        ),
-                      ),
-                      if (_isEditing)
+                Center(
+                  child: GestureDetector(
+                    onTap: _isEditing ? _pickImage : null,
+                    child: Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
                         Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFFFD834),
+                          decoration: BoxDecoration(
                             shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 3,
+                            ),
                           ),
-                          child: const Icon(
-                            Icons.camera_alt,
-                            color: Colors.white,
-                            size: 20,
+                          child: CircleAvatar(
+                            radius: 50, // Reduced from 60
+                            backgroundColor: Colors.grey[200],
+                            backgroundImage: _profileImage != null
+                                ? FileImage(_profileImage!) as ImageProvider
+                                : _profileImageUrl != null
+                                ? NetworkImage(_profileImageUrl!) as ImageProvider
+                                : const AssetImage('assets/images/Default_Profile.jpg') as ImageProvider,
                           ),
                         ),
-                    ],
+                        if (_isEditing)
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFFD834),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.camera_alt,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
+                const SizedBox(height: 24), // Reduced from 24
                 _buildEditableField(_nameController, 'Name', true),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8), // Reduced from 16
                 _buildEditableField(_emailController, 'Email', false),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16), // Added spacing after email field
+                // Removed the About field completely
+
                 if (_currentView == 'stats') _buildStatsView(),
                 if (_currentView != 'stats') ...[
                   IconButton(
@@ -315,7 +331,26 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   _buildDetailView(),
                 ],
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const AboutPage()),
+                      );
+                    },
+                    icon: const Icon(Icons.info_outline),
+                    label: const Text('About This App'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFEC5F0E),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Reduced from 32
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -323,7 +358,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     icon: const Icon(Icons.logout),
                     label: const Text('Logout'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFDA4E00),
+                      backgroundColor: const Color(0xFFEC5F0E),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
                   ),
@@ -338,6 +373,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _buildStatCard(String title, int count, IconData icon) {
     return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4), // Reduced margin
       color: Colors.white.withOpacity(0.1),
       child: ListTile(
         leading: Icon(icon, size: 28, color: const Color(0xFFFFD834)),
@@ -355,34 +391,49 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildEditableField(TextEditingController controller, String label, bool editable) {
+  Widget _buildEditableField(TextEditingController controller, String label, bool editable, {bool multiline = false}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 8), // Reduced from 16
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: TextFormField(
-              controller: controller,
-              decoration: InputDecoration(
-                labelText: label,
-                labelStyle: const TextStyle(color: Colors.white70),
-                enabledBorder: const UnderlineInputBorder(
-                  borderSide: BorderSide(color: Colors.white30),
-                ),
-                focusedBorder: const UnderlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xFFFFD834)),
-                ),
-              ),
-              style: const TextStyle(color: Colors.white),
-              enabled: _isEditing && editable,
-              validator: (value) => (value == null || value.isEmpty) ? 'Required' : null,
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
             ),
           ),
-          if (_isEditing && editable)
-            IconButton(
-              icon: const Icon(Icons.edit, color: Color(0xFFFFD834)),
-              onPressed: () {},
-            ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white30),
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xFFFFD834)),
+                    ),
+                    contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+                  ),
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  enabled: _isEditing && editable,
+                  maxLines: multiline ? 3 : 1,
+                  validator: (value) => (value == null || value.isEmpty) ? 'Required' : null,
+                ),
+              ),
+              if (_isEditing && editable)
+                IconButton(
+                  icon: const Icon(Icons.edit, color: Color(0xFFFFD834)),
+                  onPressed: () {},
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+            ],
+          ),
         ],
       ),
     );
