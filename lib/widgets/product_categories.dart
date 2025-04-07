@@ -16,13 +16,11 @@ class StyledCategoryDropdown extends StatefulWidget {
 
 class _StyledCategoryDropdownState extends State<StyledCategoryDropdown> {
   final List<String> categories = [
-    'Meat',
-    'Sweets',
+    'cosmetic ',
+    'Medicine',
     'Juice',
     'Dairy',
-    'Patisserie',
     'Grains',
-    'Medicine',
     'Others',
   ];
 

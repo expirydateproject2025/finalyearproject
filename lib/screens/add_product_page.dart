@@ -203,7 +203,10 @@ class _AddProductPageState extends State<AddProductPage>
   Future<void> _scanProduct() async {
     final ImagePicker picker = ImagePicker();
     try {
-      final XFile? image = await picker.pickImage(source: ImageSource.camera);
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 100, // Use highest quality for OCR
+      );
 
       if (image != null) {
         if (mounted) {
@@ -218,31 +221,43 @@ class _AddProductPageState extends State<AddProductPage>
 
         final inputImage = InputImage.fromFilePath(image.path);
         final textRecognizer = TextRecognizer();
-        final RecognizedText recognizedText =
-        await textRecognizer.processImage(inputImage);
+        final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
 
         if (mounted) {
           Navigator.pop(context);
         }
 
-        String text = recognizedText.text;
-        _processScannedText(text);
+        // Focus specifically on expiry date extraction
+        final DateTime? extractedDate = _extractExpiryDate(recognizedText.text);
+
+        if (extractedDate != null) {
+          setState(() {
+            _selectedDate = extractedDate;
+            _expiryController.text = _formatDate(extractedDate);
+          });
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Expiry date detected successfully')),
+            );
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No expiry date detected. Please enter manually.')),
+            );
+          }
+        }
 
         textRecognizer.close();
 
-        // Optionally save the scanned image as product image
+        // Save the scanned image as product image
         setState(() {
           _productImage = File(image.path);
         });
 
         // Upload the scanned image to Cloudinary
         await _uploadImageToCloudinary();
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No image selected')),
-          );
-        }
       }
     } catch (e) {
       if (mounted) {
@@ -257,17 +272,160 @@ class _AddProductPageState extends State<AddProductPage>
     }
   }
 
-  void _processScannedText(String text) {
-    final lines = text.split('\n');
-    for (var line in lines) {
-      // If name is empty and line doesn't look like a date => use as product name
-      if (_nameController.text.isEmpty && !line.contains('/')) {
-        _nameController.text = line.trim();
+  // Method to extract expiry date from OCR text
+  DateTime? _extractExpiryDate(String text) {
+    // Common expiry date patterns and their prefixes
+    final List<RegExp> datePatterns = [
+      // DD/MM/YYYY or DD-MM-YYYY
+      RegExp(r'(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})'),
+      // MM/DD/YYYY or MM-DD-YYYY
+      RegExp(r'(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})'),
+      // YYYY/MM/DD or YYYY-MM-DD
+      RegExp(r'(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})'),
+      // Common text prefixes with dates
+      RegExp(r'(?:EXP|Exp|exp|Expiry|EXPIRY|Best Before|USE BY|Use by)[:\s]*(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})', caseSensitive: false),
+      RegExp(r'(?:EXP|Exp|exp|Expiry|EXPIRY|Best Before|USE BY|Use by)[:\s]*(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})', caseSensitive: false),
+    ];
+
+    // Common expiry prefixes to look for in the text
+    final List<String> expiryPrefixes = [
+      'EXP', 'Exp', 'exp', 'Expiry', 'EXPIRY',
+      'Best Before', 'best before', 'BEST BEFORE',
+      'Use By', 'USE BY', 'use by',
+      'BB', 'bb', 'Best By', 'best by'
+    ];
+
+    // Split text into lines for better processing
+    final List<String> lines = text.split('\n');
+
+    // First pass: Look for lines with expiry prefixes
+    for (String line in lines) {
+      // Check if line contains any of the expiry prefixes
+      for (String prefix in expiryPrefixes) {
+        if (line.contains(prefix)) {
+          // This line likely contains expiry information, prioritize it
+          DateTime? date = _tryParseDate(line, datePatterns);
+          if (date != null) return date;
+        }
       }
-      // If expiry is empty and line looks like a date => use as expiry
-      if (_expiryController.text.isEmpty &&
-          CustomDateUtils.isValidDateFormat(line)) {
-        _expiryController.text = line.trim();
+    }
+
+    // Second pass: Scan all lines for date patterns
+    for (String line in lines) {
+      DateTime? date = _tryParseDate(line, datePatterns);
+      if (date != null) {
+        // Validate date is in the future (likely an expiry date)
+        if (date.isAfter(DateTime.now())) {
+          return date;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // Helper method to try parsing a date from text using multiple patterns
+  DateTime? _tryParseDate(String text, List<RegExp> patterns) {
+    for (RegExp pattern in patterns) {
+      final matches = pattern.allMatches(text);
+
+      for (final match in matches) {
+        try {
+          if (match.groupCount >= 3) {
+            int? day, month, year;
+
+            // Pattern: DD/MM/YYYY
+            if (int.parse(match.group(1)!) <= 31 && int.parse(match.group(2)!) <= 12) {
+              day = int.parse(match.group(1)!);
+              month = int.parse(match.group(2)!);
+              year = int.parse(match.group(3)!);
+
+              // Handle 2-digit years
+              if (year! < 100) {
+                year += 2000; // Assuming 21st century
+              }
+            }
+            // Pattern: MM/DD/YYYY
+            else if (int.parse(match.group(1)!) <= 12 && int.parse(match.group(2)!) <= 31) {
+              month = int.parse(match.group(1)!);
+              day = int.parse(match.group(2)!);
+              year = int.parse(match.group(3)!);
+
+              if (year! < 100) {
+                year += 2000;
+              }
+            }
+            // Pattern: YYYY/MM/DD
+            else if (match.group(1)!.length == 4) {
+              year = int.parse(match.group(1)!);
+              month = int.parse(match.group(2)!);
+              day = int.parse(match.group(3)!);
+            }
+
+            if (day != null && month != null && year != null) {
+              // Validate ranges
+              if (day > 0 && day <= 31 && month > 0 && month <= 12 && year >= 2000) {
+                return DateTime(year, month, day);
+              }
+            }
+          }
+        } catch (e) {
+          print('Date parsing error: $e');
+          // Continue to next match if this one fails
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // Process the scanned text to extract product name and expiry date
+  void _processScannedText(String text) {
+    // Extract product name using heuristics (avoid date-like patterns)
+    final lines = text.split('\n');
+
+    bool nameFound = false;
+    bool dateFound = false;
+
+    // Try to find date first
+    DateTime? expiryDate = _extractExpiryDate(text);
+    if (expiryDate != null) {
+      _expiryController.text = _formatDate(expiryDate);
+      _selectedDate = expiryDate;
+      dateFound = true;
+    }
+
+    // Find potential product name (prioritize longer lines that aren't dates)
+    for (String line in lines) {
+      // Skip empty lines or very short text
+      if (line.trim().length < 3) continue;
+
+      // Skip lines that look like dates
+      if (CustomDateUtils.isValidDateFormat(line)) continue;
+
+      // Skip lines with common expiry-related words
+      if (line.contains('EXP') ||
+          line.toLowerCase().contains('expiry') ||
+          line.toLowerCase().contains('best before') ||
+          line.toLowerCase().contains('use by')) {
+        continue;
+      }
+
+      // Use this line as product name
+      if (_nameController.text.isEmpty && !nameFound) {
+        _nameController.text = line.trim();
+        nameFound = true;
+        break;
+      }
+    }
+
+    // If we didn't find a date through the extractor but there's a line that looks like a date
+    if (!dateFound && _expiryController.text.isEmpty) {
+      for (String line in lines) {
+        if (CustomDateUtils.isValidDateFormat(line)) {
+          _expiryController.text = line.trim();
+          break;
+        }
       }
     }
   }
@@ -355,7 +513,6 @@ class _AddProductPageState extends State<AddProductPage>
 
   Future<void> _saveProduct() async {
     // Check if already saving
-
     if (_isSaving) return;
 
     // Validate form fields
@@ -746,7 +903,6 @@ class _AddProductPageState extends State<AddProductPage>
                     ),
                   ),
 
-                // Rest of the form remains the same
                 // Product Details Form
                 Card(
                   color: Colors.transparent,

@@ -30,7 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
     'Recently Added',
   ];
 
-  final List<String> _filterOptions = ['All', 'Food', 'Medicine'];
+  final List<String> _filterOptions = ['All', 'cosmetic ', 'Medicine','Juice', 'Dairy', 'Grains', 'Others',];
 
   // Filter and sort products based on user selections
   List<Product> _getFilteredAndSortedProducts(List<Product> products) {
@@ -276,9 +276,19 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Top bar with "Home" and notifications
-              Padding(
+              // Top bar with "Home" and notifications with gradient
+              Container(
                 padding: const EdgeInsets.all(16.0),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0xFFDA4E00),
+                      Color(0xFFFFD834),
+                    ],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -306,7 +316,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               // Search + Sort
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
                 child: Row(
                   children: [
                     Expanded(flex: 2, child: _buildSearchBar()),

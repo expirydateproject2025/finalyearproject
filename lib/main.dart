@@ -84,6 +84,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Expiry Date Tracker',
+      debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       home: AppRoutes.getInitialScreen(), // Use auth check method to determine initial screen
       routes: {

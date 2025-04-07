@@ -58,6 +58,8 @@ dependencies:
   cloudinary_url_gen: ^1.7.0
   cached_network_image: ^3.3.0  # For better image caching
   flutter_image_compress: ^2.0.4
+  google_fonts: ^6.0.0
+  lottie: ^2.3.0
 
 dev_dependencies:
   flutter_test:
