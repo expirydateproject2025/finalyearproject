@@ -1,19 +1,41 @@
+buildscript {
+    ext.kotlin_version = '2.1.0'
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://maven.pkg.jetbrains.space/public/p/kotlinx-html/maven" }
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.4'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath 'com.google.gms:google-services:4.4.0'
+    }
+}
+
 allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url "https://maven.pkg.jetbrains.space/public/p/kotlinx-html/maven" }
     }
-    tasks.withType(JavaCompile) {
-        options.compilerArgs << '-Xlint:-options'
+    configurations.all {
+        resolutionStrategy {
+            force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+            force "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+            force "org.jetbrains.kotlin:kotlin-stdlib-common:$kotlin_version"
+
+            // Force a specific version of kotlinx-metadata-jvm that's compatible
+            force "org.jetbrains.kotlin:kotlinx-metadata-jvm:0.5.0"
+        }
     }
 }
 
-rootProject.buildDir = "../build"
+rootProject.buildDir = '../build'
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
 subprojects {
-    project.evaluationDependsOn(":app")
+    project.evaluationDependsOn(':app')
 }
 
 tasks.register("clean", Delete) {
