@@ -8,6 +8,8 @@ import 'package:expirydatetracker/widgets/product_card.dart';
 import 'package:expirydatetracker/pages/product_detail_page.dart';
 import 'package:expirydatetracker/models/product_model.dart';
 
+import '../pages/edit_product_page.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -212,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
           },
           onEdit: (id) {
             // Handle edit action
-            // Navigator.push(context, MaterialPageRoute(builder: (context) => EditProductPage(productId: id)));
+            Navigator.push(context, MaterialPageRoute(builder: (context) => EditProductPage(productId: id)));
           },
           onDelete: (id) {
             // Handle delete action

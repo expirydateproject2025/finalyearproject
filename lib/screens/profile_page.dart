@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -5,10 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:expirydatetracker/models/product_model.dart';
-import 'dart:io';
 import 'package:provider/provider.dart';
 import 'package:expirydatetracker/models/ProductProvider.dart';
 import 'package:expirydatetracker/widgets/about_page.dart';
+import 'package:expirydatetracker/widgets/bottom_nav.dart'; // Import the bottom nav
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({Key? key}) : super(key: key);
@@ -20,8 +22,6 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   @override
   Widget build(BuildContext context) {
-    // Wrap the content with a ChangeNotifierProvider to ensure
-    // the ProductProvider is available in this widget tree
     return ChangeNotifierProvider(
       create: (_) => ProductProvider(),
       child: ProfilePageContent(),
@@ -43,18 +43,30 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
-  // Removed _aboutController
 
   bool _isLoading = true;
   bool _isEditing = false;
   File? _profileImage;
   String? _profileImageUrl;
-  String _currentView = 'stats'; // 'stats', 'total', 'expiring', 'monthly'
+  String _currentView = 'stats';
+
+  // Bottom navigation state
+  int _currentIndex = 2; // Profile page is index 2
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+  }
+
+  // Navigation handler
+  void _onNavigationTap(int index) {
+    if (index != 2) { // If not the Profile page
+      Navigator.pushReplacementNamed(
+        context,
+        index == 0 ? '/home' : '/add',
+      );
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -70,7 +82,6 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
             _nameController.text = userDoc['name'] ?? '';
             _emailController.text = user.email ?? '';
             _profileImageUrl = userDoc['profileImageUrl'];
-            // Removed loading about text
           });
         }
       }
@@ -132,7 +143,6 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
       if (user != null) {
         await _firestore.collection('users').doc(user.uid).set({
           'name': _nameController.text,
-          // Removed about field from the save operation
           'lastUpdated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
@@ -162,7 +172,6 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
   }
 
   Widget _buildStatsView() {
-    // Use Consumer for reactive UI updates
     return Consumer<ProductProvider>(
         builder: (context, productProvider, child) {
           return Column(
@@ -199,12 +208,9 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
             itemBuilder: (context, index) {
               final product = items[index];
               return ListTile(
-                title: Text(
-                    product.name, style: const TextStyle(color: Colors.white)),
+                title: Text(product.name, style: const TextStyle(color: Colors.white)),
                 subtitle: Text(
-                  // Format the date using DateFormat from intl package
-                  'Expires: ${DateFormat('MMM dd, yyyy').format(
-                      product.expiryDate)}',
+                  'Expires: ${DateFormat('MMM dd, yyyy').format(product.expiryDate)}',
                   style: TextStyle(
                     color: product.isExpired ? Colors.red : Colors.white70,
                   ),
@@ -255,7 +261,6 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
             ),
         ],
       ),
-
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -264,7 +269,6 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
             end: Alignment.bottomCenter,
           ),
         ),
-
         child: _isLoading
             ? const Center(child: CircularProgressIndicator(color: Colors.white))
             : SingleChildScrollView(
@@ -289,7 +293,7 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
                             ),
                           ),
                           child: CircleAvatar(
-                            radius: 50, // Reduced from 60
+                            radius: 50,
                             backgroundColor: Colors.grey[200],
                             backgroundImage: _profileImage != null
                                 ? FileImage(_profileImage!) as ImageProvider
@@ -316,12 +320,10 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                const SizedBox(height: 24), // Reduced from 24
                 _buildEditableField(_nameController, 'Name', true),
-                const SizedBox(height: 8), // Reduced from 16
+                const SizedBox(height: 8),
                 _buildEditableField(_emailController, 'Email', false),
-                const SizedBox(height: 16), // Added spacing after email field
-                // Removed the About field completely
+                const SizedBox(height: 16),
 
                 if (_currentView == 'stats') _buildStatsView(),
                 if (_currentView != 'stats') ...[
@@ -350,7 +352,6 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                // Reduced from 32
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -368,12 +369,16 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
           ),
         ),
       ),
+      bottomNavigationBar: CustomBottomNav(
+        currentIndex: _currentIndex,
+        onTap: _onNavigationTap,
+      ),
     );
   }
 
   Widget _buildStatCard(String title, int count, IconData icon) {
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4), // Reduced margin
+      margin: const EdgeInsets.symmetric(vertical: 4),
       color: Colors.white.withOpacity(0.1),
       child: ListTile(
         leading: Icon(icon, size: 28, color: const Color(0xFFFFD834)),
@@ -393,7 +398,7 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
 
   Widget _buildEditableField(TextEditingController controller, String label, bool editable, {bool multiline = false}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8), // Reduced from 16
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

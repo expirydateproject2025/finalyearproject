@@ -32,9 +32,9 @@ android {
 
     signingConfigs {
         release {
-            storeFile file("C:/finalyearproject/android/keystore.jks") // Update with your actual keystore path
+            storeFile file("C:/finalyearproject/android/app/keystore.jks") // Update with your actual keystore path
             storePassword "12345678"
-            keyAlias "your_key_alias"
+            keyAlias "epi_alias"
             keyPassword "12345678"
         }
     }
