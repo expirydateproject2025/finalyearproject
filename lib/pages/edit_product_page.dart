@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 import 'package:intl/intl.dart';
 import 'package:expirydatetracker/models/product_model.dart';
+import 'package:cloudinary_public/cloudinary_public.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 class EditProductPage extends StatefulWidget {
   final String productId;
@@ -18,8 +19,6 @@ class EditProductPage extends StatefulWidget {
 
 class _EditProductPageState extends State<EditProductPage> {
   final _formKey = GlobalKey<FormState>();
-
-  // Form controllers
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
   DateTime _expiryDate = DateTime.now().add(const Duration(days: 7));
@@ -28,9 +27,10 @@ class _EditProductPageState extends State<EditProductPage> {
   String? _currentImageUrl;
   bool _isLoading = false;
   bool _dataLoaded = false;
-
-  // Category options matching the home screen
   final List<String> _categories = ['cosmetic ', 'Medicine', 'Juice', 'Dairy', 'Grains', 'Others'];
+
+  // Cloudinary setup
+  final CloudinaryPublic cloudinary = CloudinaryPublic('dygaj4tbo', 'PRODUCT PHOTO', cache: false);
 
   @override
   void initState() {
@@ -39,10 +39,7 @@ class _EditProductPageState extends State<EditProductPage> {
   }
 
   Future<void> _loadProductData() async {
-    setState(() {
-      _isLoading = true;
-    });
-
+    setState(() => _isLoading = true);
     try {
       final docSnapshot = await FirebaseFirestore.instance
           .collection('users')
@@ -53,30 +50,20 @@ class _EditProductPageState extends State<EditProductPage> {
 
       if (docSnapshot.exists) {
         final product = Product.fromFirestore(docSnapshot);
-
         _nameController.text = product.name;
         _quantityController.text = (product.quantity ?? 1).toString();
         _expiryDate = product.expiryDate;
         _selectedCategory = product.category;
         _currentImageUrl = product.photoUrl;
-
-        setState(() {
-          _dataLoaded = true;
-        });
+        setState(() => _dataLoaded = true);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Product not found')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Product not found')));
         Navigator.pop(context);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading product: $e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
@@ -85,50 +72,52 @@ class _EditProductPageState extends State<EditProductPage> {
     final XFile? pickedImage = await picker.pickImage(source: ImageSource.gallery);
 
     if (pickedImage != null) {
-      setState(() {
-        _imageFile = File(pickedImage.path);
-      });
+      setState(() => _imageFile = File(pickedImage.path));
+      await _uploadImageToCloudinary();
     }
   }
 
-  Future<String?> _uploadImage() async {
-    if (_imageFile == null) {
-      return _currentImageUrl; // Return existing image URL if no new image
-    }
+  Future<void> _uploadImageToCloudinary() async {
+    if (_imageFile == null) return;
 
+    setState(() => _isLoading = true);
     try {
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('product_images')
-          .child('${FirebaseAuth.instance.currentUser?.uid}')
-          .child('${DateTime.now().millisecondsSinceEpoch}.jpg');
-
-      final uploadTask = storageRef.putFile(_imageFile!);
-      final snapshot = await uploadTask;
-
-      return await snapshot.ref.getDownloadURL();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error uploading image: $e')),
+      // Compress image
+      final compressedImage = await FlutterImageCompress.compressWithFile(
+        _imageFile!.path,
+        quality: 70,
       );
-      return null;
+      if (compressedImage == null) throw Exception("Compression failed");
+
+      // Generate unique filename
+      final user = FirebaseAuth.instance.currentUser;
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'product_${user?.uid}_$timestamp';
+
+      // Upload to Cloudinary
+      final response = await cloudinary.uploadFile(
+        CloudinaryFile.fromFile(
+          _imageFile!.path,
+          folder: 'expiry_products',
+          resourceType: CloudinaryResourceType.Image,
+          publicId: fileName,
+        ),
+      );
+
+      setState(() => _currentImageUrl = response.secureUrl);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Image uploaded!')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> _updateProduct() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isLoading = true;
-    });
-
+    setState(() => _isLoading = true);
     try {
-      // Upload image if a new one was selected
-      final imageUrl = await _uploadImage();
-
-      // Update product in Firestore
       await FirebaseFirestore.instance
           .collection('users')
           .doc(FirebaseAuth.instance.currentUser?.uid)
@@ -139,23 +128,16 @@ class _EditProductPageState extends State<EditProductPage> {
         'quantity': int.parse(_quantityController.text),
         'expiryDate': Timestamp.fromDate(_expiryDate),
         'category': _selectedCategory,
-        if (imageUrl != null) 'photoUrl': imageUrl,
+        'photoUrl': _currentImageUrl,
         'updatedAt': Timestamp.now(),
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Product updated successfully')),
-      );
-
-      Navigator.pop(context, true); // Return true to indicate success
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Product updated')));
+      Navigator.pop(context, true);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating product: $e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 

@@ -1,8 +1,6 @@
 import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -10,7 +8,8 @@ import 'package:expirydatetracker/models/product_model.dart';
 import 'package:provider/provider.dart';
 import 'package:expirydatetracker/models/ProductProvider.dart';
 import 'package:expirydatetracker/widgets/about_page.dart';
-import 'package:expirydatetracker/widgets/bottom_nav.dart'; // Import the bottom nav
+import 'package:cloudinary_public/cloudinary_public.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({Key? key}) : super(key: key);
@@ -37,8 +36,9 @@ class ProfilePageContent extends StatefulWidget {
 class _ProfilePageContentState extends State<ProfilePageContent> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
   final ImagePicker _picker = ImagePicker();
+  final CloudinaryPublic _cloudinary =
+  CloudinaryPublic('dygaj4tbo', 'PRODUCT_PHOTO', cache: false);
 
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
@@ -50,33 +50,18 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
   String? _profileImageUrl;
   String _currentView = 'stats';
 
-  // Bottom navigation state
-  int _currentIndex = 2; // Profile page is index 2
-
   @override
   void initState() {
     super.initState();
     _loadUserData();
   }
 
-  // Navigation handler
-  void _onNavigationTap(int index) {
-    if (index != 2) { // If not the Profile page
-      Navigator.pushReplacementNamed(
-        context,
-        index == 0 ? '/home' : '/add',
-      );
-    }
-  }
-
   Future<void> _loadUserData() async {
     setState(() => _isLoading = true);
-
     try {
       final user = _auth.currentUser;
       if (user != null) {
         final userDoc = await _firestore.collection('users').doc(user.uid).get();
-
         if (userDoc.exists) {
           setState(() {
             _nameController.text = userDoc['name'] ?? '';
@@ -110,20 +95,46 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
 
   Future<void> _uploadProfileImage() async {
     if (_profileImage == null) return;
-
     setState(() => _isLoading = true);
 
     try {
+      // Compress image
+      final compressedImage = await FlutterImageCompress.compressWithFile(
+        _profileImage!.path,
+        quality: 70,
+      );
+
+      if (compressedImage == null) throw Exception("Image compression failed");
+
       final user = _auth.currentUser;
       if (user == null) return;
 
-      final ref = _storage.ref().child('profile_images/${user.uid}');
-      await ref.putFile(_profileImage!);
-      _profileImageUrl = await ref.getDownloadURL();
+      // Generate unique filename
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'profile_${user.uid}_$timestamp';
 
+      // Upload to Cloudinary
+      final response = await _cloudinary.uploadFile(
+        CloudinaryFile.fromFile(
+          _profileImage!.path,
+          folder: 'profile_images',
+          resourceType: CloudinaryResourceType.Image,
+          publicId: fileName,
+        ),
+      );
+
+      // Update profile image URL
+      setState(() => _profileImageUrl = response.secureUrl);
+
+      // Save to Firestore
       await _firestore.collection('users').doc(user.uid).set({
         'profileImageUrl': _profileImageUrl,
       }, SetOptions(merge: true));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile image updated successfully')),
+      );
+
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error uploading image: $e')),
@@ -135,9 +146,7 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
-
     try {
       final user = _auth.currentUser;
       if (user != null) {
@@ -171,6 +180,7 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
     }
   }
 
+  // Keep the rest of your UI components unchanged
   Widget _buildStatsView() {
     return Consumer<ProductProvider>(
         builder: (context, productProvider, child) {
@@ -189,7 +199,6 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
     return Consumer<ProductProvider>(
         builder: (context, productProvider, child) {
           List<Product> items = [];
-
           if (_currentView == 'total') {
             items = productProvider.products;
           } else if (_currentView == 'expiring') {
@@ -204,6 +213,7 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
 
           return ListView.builder(
             shrinkWrap: true,
+            physics: const ClampingScrollPhysics(),
             itemCount: items.length,
             itemBuilder: (context, index) {
               final product = items[index];
@@ -271,107 +281,114 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
         ),
         child: _isLoading
             ? const Center(child: CircularProgressIndicator(color: Colors.white))
-            : SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: GestureDetector(
-                    onTap: _isEditing ? _pickImage : null,
-                    child: Stack(
-                      alignment: Alignment.bottomRight,
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white,
-                              width: 3,
-                            ),
-                          ),
-                          child: CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Colors.grey[200],
-                            backgroundImage: _profileImage != null
-                                ? FileImage(_profileImage!) as ImageProvider
-                                : _profileImageUrl != null
-                                ? NetworkImage(_profileImageUrl!) as ImageProvider
-                                : const AssetImage('assets/images/Default_Profile.jpg') as ImageProvider,
+            : Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: GestureDetector(
+                          onTap: _isEditing ? _pickImage : null,
+                          child: Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 3,
+                                  ),
+                                ),
+                                child: CircleAvatar(
+                                  radius: 50,
+                                  backgroundColor: Colors.grey[200],
+                                  backgroundImage: _profileImage != null
+                                      ? FileImage(_profileImage!) as ImageProvider
+                                      : _profileImageUrl != null
+                                      ? NetworkImage(_profileImageUrl!) as ImageProvider
+                                      : const AssetImage('assets/images/Default_Profile.jpg') as ImageProvider,
+                                ),
+                              ),
+                              if (_isEditing)
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFFFD834),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.camera_alt,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                        if (_isEditing)
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFFFD834),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.camera_alt,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
+                      ),
+                      const SizedBox(height: 24),
+                      _buildEditableField(_nameController, 'Name', true),
+                      const SizedBox(height: 8),
+                      _buildEditableField(_emailController, 'Email', false),
+                      const SizedBox(height: 16),
+                      if (_currentView == 'stats') _buildStatsView(),
+                      if (_currentView != 'stats') ...[
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () => setState(() => _currentView = 'stats'),
+                        ),
+                        _buildDetailView(),
                       ],
-                    ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 24),
-                _buildEditableField(_nameController, 'Name', true),
-                const SizedBox(height: 8),
-                _buildEditableField(_emailController, 'Email', false),
-                const SizedBox(height: 16),
-
-                if (_currentView == 'stats') _buildStatsView(),
-                if (_currentView != 'stats') ...[
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => setState(() => _currentView = 'stats'),
-                  ),
-                  _buildDetailView(),
-                ],
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const AboutPage()),
-                      );
-                    },
-                    icon: const Icon(Icons.info_outline),
-                    label: const Text('About This App'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFEC5F0E),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _signOut,
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Logout'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFEC5F0E),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const AboutPage()),
+                        );
+                      },
+                      icon: const Icon(Icons.info_outline),
+                      label: const Text('About This App'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFEC5F0E),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _signOut,
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Logout'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFEC5F0E),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-      ),
-      bottomNavigationBar: CustomBottomNav(
-        currentIndex: _currentIndex,
-        onTap: _onNavigationTap,
       ),
     );
   }
@@ -396,7 +413,7 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
     );
   }
 
-  Widget _buildEditableField(TextEditingController controller, String label, bool editable, {bool multiline = false}) {
+  Widget _buildEditableField(TextEditingController controller, String label, bool editable) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Column(
@@ -426,7 +443,6 @@ class _ProfilePageContentState extends State<ProfilePageContent> {
                   ),
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                   enabled: _isEditing && editable,
-                  maxLines: multiline ? 3 : 1,
                   validator: (value) => (value == null || value.isEmpty) ? 'Required' : null,
                 ),
               ),

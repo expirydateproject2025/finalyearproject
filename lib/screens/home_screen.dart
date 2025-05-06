@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:expirydatetracker/widgets/bottom_nav.dart';
 import 'package:expirydatetracker/screens/notification_page.dart';
 import 'package:expirydatetracker/screens/profile_page.dart';
 import 'package:expirydatetracker/widgets/product_card.dart';
@@ -156,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
               labelStyle: TextStyle(
                 color: _selectedFilter == filter ? const Color(0xFFFB6E1E) : Colors.white,
               ),
-              backgroundColor: Colors.white.withOpacity(0.1),
+              backgroundColor: const Color(0xFFFB6E1E),
             ),
           );
         }).toList(),
@@ -261,6 +260,41 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: _currentIndex == 0 ? AppBar(
+        title: const Text(
+          'Home',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.notifications, color: Colors.white),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const NotificationPage(),
+                ),
+              );
+            },
+          ),
+        ],
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Color(0xFFDA4E00),
+                Color(0xFFFFD834),
+              ],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+          ),
+        ),
+      ) : null,
       body: _currentIndex == 0
           ? Container(
         height: double.infinity,
@@ -278,44 +312,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Top bar with "Home" and notifications with gradient
-              Container(
-                padding: const EdgeInsets.all(16.0),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Color(0xFFDA4E00),
-                      Color(0xFFFFD834),
-                    ],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Home',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.notifications, color: Colors.white),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const NotificationPage(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
               // Search + Sort
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
@@ -391,12 +387,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       )
           : _currentIndex == 1 ? Container() : const ProfilePage(), // If _currentIndex == 1, show empty container, if 2, show ProfilePage
-      bottomNavigationBar: CustomBottomNav(
-        currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() => _currentIndex = index);
-        },
-      ),
     );
   }
 }

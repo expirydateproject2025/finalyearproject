@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/product_model.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
+import 'package:expirydatetracker/pages/product_detail_page.dart';
 
 class NotificationPage extends StatefulWidget {
   const NotificationPage({Key? key}) : super(key: key);
@@ -38,73 +39,75 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        color: const Color(0xFF0D0A4A), // Dark blue background
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Custom App Bar with Gradient
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Color(0xFFDA4E00),
-                      Color(0xFFFFD834),
-                    ],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                            onPressed: () {
-                              Navigator.of(context).pop();
-                            },
-                          ),
-                          const Expanded(
-                            child: Text(
-                              'Notifications',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TabBar(
-                      controller: _tabController,
-                      indicatorColor: Colors.white,
-                      indicatorWeight: 3,
-                      labelColor: Colors.white,
-                      unselectedLabelColor: Colors.white.withOpacity(0.6),
-                      labelStyle: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                      unselectedLabelStyle: const TextStyle(
-                        fontWeight: FontWeight.normal,
-                        fontSize: 16,
-                      ),
-                      tabs: const [
-                        Tab(text: 'All'),
-                        Tab(text: 'Expiring Soon'),
-                        Tab(text: 'Expired'),
-                      ],
-                    ),
+        color: const Color(0xFF0D0A51), // Dark blue background
+        child: Column(
+          children: [
+            // Full-height gradient app bar
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFFDA4E00),
+                    Color(0xFFFFD834),
                   ],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
                 ),
               ),
+              child: Column(
+                children: [
+                  // Status bar spacing
+                  SizedBox(height: MediaQuery.of(context).padding.top),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back,
+                              color: Colors.white, size: 28),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        const Expanded(
+                          child: Text(
+                            'Notifications',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TabBar(
+                    controller: _tabController,
+                    indicatorColor: Colors.white,
+                    indicatorWeight: 3,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.white.withOpacity(0.6),
+                    labelStyle: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                    unselectedLabelStyle: const TextStyle(
+                      fontWeight: FontWeight.normal,
+                      fontSize: 16,
+                    ),
+                    tabs: const [
+                      Tab(text: 'All'),
+                      Tab(text: 'Expiring Soon'),
+                      Tab(text: 'Expired'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
 
-              // Tab View Content
-              Expanded(
+            // Content area with safe bottom padding
+            Expanded(
+              child: SafeArea(
+                top: false,
                 child: TabBarView(
                   controller: _tabController,
                   children: [
@@ -114,8 +117,8 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
@@ -173,7 +176,6 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
   }
 
   Widget _buildProductCard(Product product) {
-    // Determine card colors and icons based on expiry status
     Color cardColor;
     Color iconBackgroundColor;
     IconData statusIcon;
@@ -232,7 +234,6 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Status Icon
                 Container(
                   width: 60,
                   height: 60,
@@ -247,8 +248,6 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
                   ),
                 ),
                 const SizedBox(width: 16),
-
-                // Product Details
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -282,8 +281,6 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
                     ],
                   ),
                 ),
-
-                // More Options Button
                 IconButton(
                   icon: const Icon(Icons.more_vert),
                   onPressed: () {
@@ -293,8 +290,6 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
               ],
             ),
           ),
-
-          // Status Label
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -338,8 +333,12 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
         children: [
           SimpleDialogOption(
             onPressed: () {
-              Navigator.pop(context);
-              // Navigate to details page
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => ProductDetailPage(product: product)
+                  )
+              );
             },
             child: const Row(
               children: [

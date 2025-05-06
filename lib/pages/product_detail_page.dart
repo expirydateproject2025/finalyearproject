@@ -1,18 +1,35 @@
+import 'package:expirydatetracker/pages/edit_product_page.dart';
 import 'package:flutter/material.dart';
 import 'package:expirydatetracker/models/product_model.dart';
 import 'package:expirydatetracker/services/cloudinary_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-class ProductDetailPage extends StatelessWidget {
+class ProductDetailPage extends StatefulWidget {
   final Product product;
 
   const ProductDetailPage({Key? key, required this.product}) : super(key: key);
 
+  @override
+  State<ProductDetailPage> createState() => _ProductDetailPageState();
+}
+
+class _ProductDetailPageState extends State<ProductDetailPage> {
+  late Product _product;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _product = widget.product;
+  }
+
   // Calculate days until expiry
   int get daysUntilExpiry {
     final now = DateTime.now();
-    final difference = product.expiryDate.difference(now);
+    final difference = _product.expiryDate.difference(now);
     return difference.inDays;
   }
 
@@ -41,6 +58,53 @@ class ProductDetailPage extends StatelessWidget {
     }
   }
 
+  // Method to update the product with new data from edit page
+  Future<void> _refreshProductData() async {
+    try {
+      final docSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(FirebaseAuth.instance.currentUser?.uid)
+          .collection('products')
+          .doc(_product.id)
+          .get();
+
+      if (docSnapshot.exists) {
+        setState(() {
+          _product = Product.fromFirestore(docSnapshot);
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error refreshing data: $e')),
+      );
+    }
+  }
+
+  // Method to delete product from Firestore
+  Future<void> _deleteProduct() async {
+    setState(() => _isLoading = true);
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(FirebaseAuth.instance.currentUser?.uid)
+          .collection('products')
+          .doc(_product.id)
+          .delete();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Product successfully deleted')),
+      );
+
+      Navigator.of(context).pop(true); // Return true to indicate deletion
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete product: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('MMMM dd, yyyy');
@@ -50,7 +114,9 @@ class ProductDetailPage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: backgroundColor,
-      body: CustomScrollView(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : CustomScrollView(
         slivers: [
           // Custom app bar with image and back button
           SliverAppBar(
@@ -64,11 +130,11 @@ class ProductDetailPage extends StatelessWidget {
                 children: [
                   // Product image
                   Hero(
-                    tag: 'product-image-${product.id}',
-                    child: product.photoUrl != null
+                    tag: 'product-image-${_product.id}',
+                    child: _product.photoUrl != null
                         ? CachedNetworkImage(
                       imageUrl: CloudinaryService.getOptimizedUrl(
-                        product.photoUrl!,
+                        _product.photoUrl!,
                         width: 800,
                       ),
                       fit: BoxFit.cover,
@@ -117,7 +183,7 @@ class ProductDetailPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          product.name,
+                          _product.name,
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -158,7 +224,7 @@ class ProductDetailPage extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Text(
-                                product.category,
+                                _product.category,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w500,
@@ -188,22 +254,22 @@ class ProductDetailPage extends StatelessWidget {
                   const SizedBox(height: 20),
 
                   // Additional information
-                  if (product.quantity != null && product.quantity! > 1)
+                  if (_product.quantity != null && _product.quantity! > 1)
                     _buildInfoCard(
                       context,
                       title: 'Quantity',
                       icon: Icons.inventory_2_outlined,
-                      content: '${product.quantity} units',
+                      content: '${_product.quantity} units',
                       color: Colors.blue,
                     ),
 
-                  if (product.reminder != null) ...[
+                  if (_product.reminder != null) ...[
                     const SizedBox(height: 20),
                     _buildInfoCard(
                       context,
                       title: 'Reminder',
                       icon: Icons.notifications_outlined,
-                      content: product.reminder!,
+                      content: _product.reminder!,
                       color: Colors.purple,
                     ),
                   ],
@@ -232,8 +298,18 @@ class ProductDetailPage extends StatelessWidget {
                             ),
                             elevation: 4,
                           ),
-                          onPressed: () {
-                            // Navigate to edit product page
+                          onPressed: () async {
+                           /* final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) => EditProductPage(productId: _product.id),
+                                ),
+                            );
+
+                            // If edit was successful, refresh the product data
+                            if (result == true) {
+                              await _refreshProductData();
+                            }*/
                           },
                         ),
                       ),
@@ -317,7 +393,7 @@ class ProductDetailPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        dateFormat.format(product.expiryDate),
+                        dateFormat.format(_product.expiryDate),
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -496,7 +572,7 @@ class ProductDetailPage extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                'Are you sure you want to delete ${product.name}?',
+                'Are you sure you want to delete ${_product.name}?',
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 16),
               ),
@@ -534,9 +610,8 @@ class ProductDetailPage extends StatelessWidget {
                 ),
               ),
               onPressed: () {
-                // TODO: Implement delete functionality
-                Navigator.of(context).pop();
-                Navigator.of(context).pop();
+                Navigator.of(context).pop(); // Close dialog
+                _deleteProduct(); // Call delete method
               },
             ),
           ],

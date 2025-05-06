@@ -8,7 +8,7 @@ import 'package:expirydatetracker/widgets/product_categories.dart';
 import 'package:expirydatetracker/utils/date_utils.dart';
 import 'package:intl/intl.dart';
 import 'package:expirydatetracker/models/product_model.dart';
-import 'package:expirydatetracker/widgets/bottom_nav.dart';
+import 'package:expirydatetracker/widgets/animated_bottom_nav.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' as path;
@@ -565,6 +565,7 @@ class _AddProductPageState extends State<AddProductPage>
         userId: user.uid,
       );
 
+
       // Debug print product data
       print('About to save product with data: ${product.toFirestore()}');
 
@@ -1035,10 +1036,7 @@ class _AddProductPageState extends State<AddProductPage>
         ),
       ),
       // Add the bottom navigation bar
-      bottomNavigationBar: CustomBottomNav(
-        currentIndex: _currentIndex,
-        onTap: _onNavigationTap,
-      ),
+
     );
   }
 }

@@ -19,12 +19,14 @@ import 'services/notification_service.dart';
 
 // Routes
 import 'routes/app_routes.dart';
+import 'package:expirydatetracker/navigation/main_wrapper.dart';
 
 // Theme
 import 'theme/app_theme.dart';
 
 // Models/Providers
 import 'models/ProductProvider.dart';
+import 'package:expirydatetracker/navigation/bottom_nav_controller.dart';
 
 /// Background message handler (MUST be top-level function)
 @pragma('vm:entry-point')
@@ -99,7 +101,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ProductProvider()),
-        // Add other providers here as needed
+        ChangeNotifierProvider(create: (_) => BottomNavController()),
       ],
       child: MaterialApp(
         title: 'Expiry Date Tracker',
@@ -110,9 +112,8 @@ class MyApp extends StatelessWidget {
           '/login': (context) => const LoginScreen(),
           '/signup': (context) => const SignupScreen(),
           '/forgot-password': (context) => const ForgotPasswordScreen(),
-          '/home': (context) => const HomeScreen(),
+          '/home': (context) => const MainWrapper(),
           '/notifications': (context) => const NotificationPage(),
-          '/add-product': (context) => const AddProductPage(),
           '/profile': (context) => const ProfilePage(),
           '/about': (context) => const AboutPage(),
         },
